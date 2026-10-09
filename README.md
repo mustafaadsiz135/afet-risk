@@ -18,7 +18,8 @@ Yerli ve yabancı turistlerin konaklayacakları otelin ya da bölgenin **deprem,
 ### Suç ve kişisel güvenlik (ülke geneli, puanlı)
 - Dünya Bankası / UNODC kasten öldürme oranı (100.000 kişide), dünya ortalamasıyla karşılaştırmalı. Oran dünya ortalamasının 0,5 katından az: çok düşük · 1 katından az: düşük · 1,5 katından az: orta · 1,5–3 kat: **yüksek** · 3 kat ve üzeri: çok yüksek.
 - Birleşik Krallık Dışişleri (FCDO) resmi seyahat bilgisinin "Crime" bölümü (yan kesicilik, dolandırıcılık, taksi güvenliği vb.), İngilizce ve değiştirilmeden.
-- Yan kesicilik gibi suçlar için ilçe/otel düzeyinde karşılaştırılabilir güvenilir açık veri olmadığından konuma özel suç puanı verilmez ve suç göstergesi konum güvenlik puanına katılmaz.
+- **Konum çevresi resmi kayıtları (öncelikli):** Sokak düzeyinde açık resmi suç kaydı bulunan yerlerde (İngiltere ve Galler — data.police.uk; Chicago ve San Francisco açık veri portalları) konumun 1 km çevresindeki kayıt sayısı, aynı şehirde 3 km uzaktaki 4 bölgenin (K, D, G, B) ortancasıyla karşılaştırılır. Aynı eşikler geçerlidir: 1,5 kat ve üzeri **yüksek**. Yankesicilik ayrı gösterilir; sokak adı veya tekil olay gösterilmez.
+- Bu tür verinin olmadığı yerlerde (Türkiye dahil) ülke geneli gösterge kullanılır. Suç göstergesi konum güvenlik puanına katılmaz.
 
 Her tehlike 0–100 puanlanır: 0–19 çok düşük, 20–39 düşük, 40–59 orta, 60–79 yüksek, 80–100 çok yüksek.
 Konum güvenlik puanı = 100 − (0,65 × en yüksek tehlike + 0,35 × ortalama tehlike).
@@ -42,6 +43,7 @@ Konum güvenlik puanı = 100 − (0,65 × en yüksek tehlike + 0,35 × ortalama 
 - Ülke göstergeleri: Dünya Bankası Açık Veri — UNODC, DSÖ, WHO/UNICEF JMP, ITU, Global Findex kaynaklı (CC BY 4.0)
 - Sarıhumma riski: DSÖ, sarıhumma bulaşma riski bulunan ülkeler (Kasım 2022)
 - Resmi dil ve para birimi: mledoze/countries (ODbL)
+- Yerel suç kayıtları: data.police.uk (Open Government Licence), City of Chicago ve DataSF açık veri portalları
 - Resmi seyahat bilgisi: GOV.UK Foreign travel advice (Open Government Licence v3.0)
 - Ülke/il/ilçe listesi: countries-states-cities veri seti (ODbL)
 

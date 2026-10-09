@@ -147,6 +147,6 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         private const val HOST = "appassets.androidplatform.net"
-        private val ALLOWED_HOSTS = setOf("www.gov.uk", "api.worldbank.org")
+        private val ALLOWED_HOSTS = setOf("www.gov.uk", "api.worldbank.org", "data.police.uk", "data.cityofchicago.org", "data.sfgov.org")
     }
 }

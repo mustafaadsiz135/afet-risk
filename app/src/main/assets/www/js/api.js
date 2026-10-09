@@ -234,3 +234,88 @@ export function extractSection(html, re, max = 30) {
   }
   return { blocks: blocks.slice(0, max), links };
 }
+
+// ---------- Konum çevresindeki resmi suç kayıtları (yalnızca açık sokak düzeyi veri bulunan yerler) ----------
+// Yöntem: konumun 1 km çevresindeki kayıt sayısı, aynı şehirde 3 km uzaktaki 4 noktanın (K, D, G, B)
+// 1 km çevresindeki kayıt sayılarıyla karşılaştırılır. Sokak adı veya tekil olay gösterilmez.
+const LOCAL_SOURCES = [
+  { key: 'police_uk', test: (lat, lon, cc) => cc === 'GB' && lat < 55.8 },          // İngiltere, Galler, K. İrlanda
+  { key: 'chicago', test: (lat, lon) => lat > 41.64 && lat < 42.03 && lon > -87.94 && lon < -87.52 },
+  { key: 'sf', test: (lat, lon) => lat > 37.70 && lat < 37.84 && lon > -122.52 && lon < -122.35 },
+];
+export function localCrimeSource(lat, lon, cc) {
+  return LOCAL_SOURCES.find((s) => s.test(lat, lon, cc))?.key || null;
+}
+export const LOCAL_RADIUS_M = 1000, RING_DIST_M = 3000;
+function offsetPoint(lat, lon, dn, de) {
+  return [lat + dn / 111320, lon + de / (111320 * Math.cos((lat * Math.PI) / 180))];
+}
+function ringPoints(lat, lon) {
+  const d = RING_DIST_M;
+  return [offsetPoint(lat, lon, d, 0), offsetPoint(lat, lon, 0, d), offsetPoint(lat, lon, -d, 0), offsetPoint(lat, lon, 0, -d)];
+}
+const isoDay = (t) => new Date(t).toISOString().slice(0, 10);
+
+// --- İngiltere ve Galler polisi (data.police.uk, Open Government Licence) ---
+async function policeUk(lat, lon) {
+  const dates = await getJSONAny('https://data.police.uk/api/crimes-street-dates', 20000);
+  const months = dates.map((d) => d.date).sort().reverse().slice(0, 2);
+  if (!months.length) throw new Error('no months');
+  const poly = (la, lo) => {
+    const pts = [];
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * 2 * Math.PI;
+      const [pla, plo] = offsetPoint(la, lo, LOCAL_RADIUS_M * Math.cos(a), LOCAL_RADIUS_M * Math.sin(a));
+      pts.push(`${pla.toFixed(5)},${plo.toFixed(5)}`);
+    }
+    return pts.join(':');
+  };
+  const fetchArea = async (la, lo) => {
+    const all = [];
+    for (const m of months) {
+      const r = await getJSONAny(`https://data.police.uk/api/crimes-street/all-crime?poly=${poly(la, lo)}&date=${m}`, 30000);
+      all.push(...r);
+    }
+    return all.filter((c) => c.category !== 'anti-social-behaviour'); // suç olmayan şikâyetler hariç
+  };
+  const center = await fetchArea(lat, lon);
+  const ring = await Promise.all(ringPoints(lat, lon).map(([a, b]) => fetchArea(a, b).then((x) => x.length).catch(() => null)));
+  const cats = {};
+  for (const c of center) cats[c.category] = (cats[c.category] || 0) + 1;
+  return {
+    source: 'police_uk', url: 'https://data.police.uk/', months,
+    total: center.length, ring,
+    pickpocket: cats['theft-from-the-person'] || 0,
+    categories: Object.entries(cats).map(([k, n]) => ({ k, n })).sort((a, b) => b.n - a.n),
+  };
+}
+
+// --- Socrata açık veri portalları (Chicago, San Francisco) ---
+const SOCRATA = {
+  chicago: { base: 'https://data.cityofchicago.org/resource/ijzp-q8t2.json', geo: 'location', date: 'date', cat: 'primary_type',
+    pick: "description='POCKET-PICKING'", url: 'https://data.cityofchicago.org/' },
+  sf: { base: 'https://data.sfgov.org/resource/wg3w-h783.json', geo: 'point', date: 'incident_datetime', cat: 'incident_category',
+    pick: null, url: 'https://datasf.org/opendata/' },
+};
+async function socrata(key, lat, lon) {
+  const S = SOCRATA[key];
+  const to = Date.now(), from = to - 90 * 864e5;
+  const where = (la, lo) => `within_circle(${S.geo},${la.toFixed(5)},${lo.toFixed(5)},${LOCAL_RADIUS_M}) AND ${S.date} > '${isoDay(from)}T00:00:00'`;
+  const q = (params) => getJSONAny(`${S.base}?${Object.entries(params).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&')}`, 30000);
+  const count = async (la, lo, extra) => {
+    const r = await q({ $select: 'count(*) AS n', $where: where(la, lo) + (extra ? ` AND ${extra}` : '') });
+    return +(r?.[0]?.n ?? 0);
+  };
+  const catsRaw = await q({ $select: `${S.cat} AS k, count(*) AS n`, $where: where(lat, lon), $group: S.cat, $order: 'n DESC', $limit: 50 });
+  const categories = catsRaw.filter((x) => x.k).map((x) => ({ k: x.k, n: +x.n }));
+  const total = categories.reduce((a, b) => a + b.n, 0);
+  const ring = await Promise.all(ringPoints(lat, lon).map(([a, b]) => count(a, b).catch(() => null)));
+  const pickpocket = S.pick ? await count(lat, lon, S.pick).catch(() => null) : null;
+  return { source: key, url: S.url, days: 90, total, ring, pickpocket, categories };
+}
+
+export async function localCrime(lat, lon, cc) {
+  const src = localCrimeSource(lat, lon, cc);
+  if (!src) return null;
+  return src === 'police_uk' ? policeUk(lat, lon) : socrata(src, lat, lon);
+}

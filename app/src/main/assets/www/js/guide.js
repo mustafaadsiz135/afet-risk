@@ -96,3 +96,23 @@ export function languageInfo(info) {
   const langs = (info?.l || []).map(([code, name]) => ({ code, name }));
   return { langs, englishOfficial: langs.some((l) => l.code === 'eng') };
 }
+
+// ---------- Yerel suç kayıtları (sokak düzeyi resmi veri olan yerler) ----------
+// Oran = konumun 1 km çevresindeki kayıt sayısı / aynı şehirde 3 km uzaktaki bölgelerin ortanca kayıt sayısı.
+// Eşikler ülke göstergesiyle aynıdır: 1,5 kat ve üzeri "yüksek".
+export function scoreLocalCrime(loc) {
+  if (!loc) return null;
+  const ring = (loc.ring || []).filter((v) => v != null && v > 0).sort((a, b) => a - b);
+  if (!loc.total && !ring.length) return null; // kapsam dışı (ör. veri olmayan bölge)
+  const median = ring.length ? (ring.length % 2 ? ring[(ring.length - 1) / 2] : (ring[ring.length / 2 - 1] + ring[ring.length / 2]) / 2) : null;
+  const r = median ? loc.total / median : null;
+  const factors = [
+    { k: 'lc.total', v: { n: loc.total, src: loc.source, months: loc.months, days: loc.days } },
+    { k: 'lc.ring', v: { m: median, n: ring.length } },
+  ];
+  if (r != null) factors.push({ k: 'lc.ratio', v: { r } });
+  if (loc.pickpocket != null) factors.push({ k: 'lc.pick', v: { n: loc.pickpocket } });
+  if (r == null) return { score: null, factors, confidence: 'low', local: true };
+  const confidence = loc.total >= 30 && ring.length >= 3 ? 'high' : loc.total >= 10 && ring.length >= 2 ? 'medium' : 'low';
+  return { score: crimeScoreFromRatio(r), factors, confidence, ratio: r, local: true };
+}

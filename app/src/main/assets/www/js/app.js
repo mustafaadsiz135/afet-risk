@@ -1,5 +1,5 @@
 import { T, fmt, langName } from './i18n.js';
-import { scoreCrime, scoreHealth, scoreTransport, scoreFinance, languageInfo } from './guide.js';
+import { scoreCrime, scoreLocalCrime, scoreHealth, scoreTransport, scoreFinance, languageInfo } from './guide.js';
 import * as api from './api.js';
 import {
   terrainStats, climateStats, quakeStats, nearestFault, waterStats,
@@ -147,23 +147,25 @@ function onCenter() {
 async function evaluate(place) {
   show('progress');
   $('#progPlace').textContent = place.label;
-  const keys = ['faults', 'quakes', 'terrain', 'climate', 'water', 'country'];
-  $('#stepList').innerHTML = keys.map((k) => `<li id="st-${k}" class="run">${esc(t().steps[k])}</li>`).join('');
+  const hasLocal = !!api.localCrimeSource(place.lat, place.lon, place.cc);
+  const keys = ['faults', 'quakes', 'terrain', 'climate', 'water', 'country', ...(hasLocal ? ['local'] : [])];
+  $('#stepList').innerHTML = keys.map((k) => `<li id="st-${k}" class="run">${esc(t().steps[k] || t().localStep)}</li>`).join('');
   const mark = (k, ok) => {
     const li = $('#st-' + k);
     if (!li) return;
     li.className = ok ? 'ok' : 'fail';
-    if (!ok) li.textContent = `${t().steps[k]} — ${t().stepFail}`;
+    if (!ok) li.textContent = `${t().steps[k] || t().localStep} — ${t().stepFail}`;
   };
   const run = (k, fn) => fn().then((v) => { mark(k, true); return v; }, (e) => { console.warn(k, e); mark(k, false); return null; });
   const { lat, lon } = place;
-  const [faults, quakes, elev, daily, water, country] = await Promise.all([
+  const [faults, quakes, elev, daily, water, country, localCrime] = await Promise.all([
     run('faults', () => api.faultsAround(lat, lon)),
     run('quakes', () => api.earthquakes(lat, lon, 150)),
     run('terrain', () => api.elevationGrid(lat, lon)),
     run('climate', () => api.climateHistory(lat, lon)),
     run('water', () => api.waterways(lat, lon)),
     run('country', () => loadCountry(place.cc)),
+    hasLocal ? run('local', () => api.localCrime(place.lat, place.lon, place.cc)) : Promise.resolve(null),
   ]);
   const data = {
     place,
@@ -173,6 +175,7 @@ async function evaluate(place) {
     climate: daily ? climateStats(daily) : null,
     water: water ? waterStats(lat, lon, water) : null,
     country,
+    localCrime,
     failed: [!quakes && 'quakes', !elev && 'terrain', !daily && 'climate', !water && 'water'].filter(Boolean),
     date: Date.now(),
   };
@@ -219,7 +222,8 @@ async function loadCountry(cc) {
 function computeGuide(d) {
   const c = d.country, st = c?.stats || null, info = state.info[d.place.cc];
   d.guide = {
-    cr: scoreCrime(st, !!c?.text?.crime?.blocks.length),
+    cr: scoreLocalCrime(d.localCrime) || scoreCrime(st, !!c?.text?.crime?.blocks.length),
+    crCountry: scoreCrime(st, !!c?.text?.crime?.blocks.length),
     he: scoreHealth(st, d.place.cc, d.place.lat),
     tr: scoreTransport(st, d.place.cc),
     fi: scoreFinance(st, info),
@@ -251,10 +255,22 @@ function scoreCard(key, icon, sc, extra = '', opts = {}) {
 }
 function tipList(arr) { return `<h3>${esc(t().tips)}</h3><ul class="tips small">${arr.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>`; }
 function crimeCard(d) {
-  const L = t(), x = d.country?.text;
-  return scoreCard('cr', 'cr', d.guide.cr, `${officialHtml(d, [x?.crime])}<p class="note">${esc(L.crimeNoLocal)}</p>`,
+  const L = t(), x = d.country?.text, g = d.guide;
+  if (g.cr?.local) {
+    const loc = d.localCrime;
+    const cats = loc.categories.slice(0, 8).map((c) => `<li><span>${esc(L.catName[c.k] || titleCase(c.k))}</span><b>${fmt.n0(c.n, lang)}</b></li>`).join('');
+    const cc = g.crCountry;
+    const ctry = cc ? `<h3>${esc(L.countryInfo)}</h3><ul class="factors">${cc.factors.map((f) => `<li><span>${esc(L.f[f.k](f.v, lang))}</span></li>`).join('')}</ul>` : '';
+    const extra = `${cats ? `<h3>${esc(L.localTitle)}</h3><ul class="factors">${cats}</ul>` : ''}
+      <p class="note">${esc(L.localNote)}</p>
+      <p class="small"><a href="${esc(loc.url)}" target="_blank" rel="noopener">${esc(L.localSource)}</a></p>
+      ${ctry}${x?.crime?.blocks?.length ? officialHtml(d, [x.crime]) : ''}`;
+    return scoreCard('cr', 'cr', g.cr, extra, { scope: L.crimeScopeLocal(loc.source), noScoreText: L.crimeFail, open: true });
+  }
+  return scoreCard('cr', 'cr', g.cr, `${officialHtml(d, [x?.crime])}<p class="note">${esc(L.crimeNoLocal)}</p>`,
     { scope: L.crimeScope, noScoreText: L.crimeFail, open: true });
 }
+function titleCase(s) { return String(s).toLowerCase().replace(/(^|[\s/-])\p{L}/gu, (m) => m.toUpperCase()); }
 function guideHtml(d) {
   const L = t(), g = d.guide, x = d.country?.text;
   const vaccLink = (x?.health?.links || []).find((a) => /travelhealthpro/i.test(a.href));
