@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Afet Risk Rehberi</string>
+    <string name="share_title">Raporu paylaş</string>
+    <string name="no_internet">İnternet bağlantısı yok. Konum arama ve risk verileri için internet gereklidir.</string>
+</resources>

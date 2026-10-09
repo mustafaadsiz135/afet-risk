@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Disaster Risk Guide</string>
+    <string name="share_title">Share report</string>
+    <string name="no_internet">No internet connection. Location search and risk data need internet access.</string>
+</resources>
