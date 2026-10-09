@@ -116,3 +116,6 @@ export function scoreLocalCrime(loc) {
   const confidence = loc.total >= 30 && ring.length >= 3 ? 'high' : loc.total >= 10 && ring.length >= 2 ? 'medium' : 'low';
   return { score: crimeScoreFromRatio(r), factors, confidence, ratio: r, local: true };
 }
+
+// Ulaşım ve iletişim: 3 düzey. 0 = kolay (0–29), 1 = orta (30–59), 2 = zor (60+).
+export function transportLevel(score) { return score < 30 ? 0 : score < 60 ? 1 : 2; }

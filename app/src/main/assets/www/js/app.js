@@ -1,5 +1,5 @@
 import { T, fmt, langName } from './i18n.js';
-import { scoreCrime, scoreLocalCrime, scoreHealth, scoreTransport, scoreFinance, languageInfo } from './guide.js';
+import { scoreCrime, scoreLocalCrime, scoreTransport, languageInfo, transportLevel } from './guide.js';
 import * as api from './api.js';
 import {
   terrainStats, climateStats, quakeStats, nearestFault, waterStats,
@@ -30,6 +30,7 @@ function applyLang() {
   fillCountries(true);
   renderHistory();
   if (state.report && state.view === 'report') renderReport(state.report);
+  if (state.view === 'compare') renderCompare();
 }
 
 // ---------- Görünümler ----------
@@ -38,6 +39,7 @@ function show(v) {
   $('#vHome').hidden = v !== 'home';
   $('#vProgress').hidden = v !== 'progress';
   $('#vReport').hidden = v !== 'report';
+  $('#vCompare').hidden = v !== 'compare';
   $('#btnBack').hidden = v === 'home';
   window.scrollTo(0, 0);
 }
@@ -212,9 +214,6 @@ async function loadCountry(cc) {
   out.text = out.advice ? {
     crime: api.extractSection(P['safety-and-security'], /^\s*crime\s*$/i),
     transport: api.extractSection(P['safety-and-security'], /transport risks/i),
-    health: api.extractSection(P.health, null, 40),
-    vacc: api.extractSection(P['entry-requirements'], /vaccin/i),
-    money: api.extractSection(P['entry-requirements'], /money|currency|cash/i),
   } : null;
   if (out.advice) { out.base = out.advice.base; out.updated = out.advice.updated; delete out.advice; }
   return out;
@@ -224,9 +223,7 @@ function computeGuide(d) {
   d.guide = {
     cr: scoreLocalCrime(d.localCrime) || scoreCrime(st, !!c?.text?.crime?.blocks.length),
     crCountry: scoreCrime(st, !!c?.text?.crime?.blocks.length),
-    he: scoreHealth(st, d.place.cc, d.place.lat),
     tr: scoreTransport(st, d.place.cc),
-    fi: scoreFinance(st, info),
     la: languageInfo(info),
   };
 }
@@ -244,10 +241,11 @@ function officialHtml(d, sections, title) {
 }
 function scoreCard(key, icon, sc, extra = '', opts = {}) {
   const L = t(), C = L.cat[key];
-  const lv = sc && sc.score != null ? levelOf(sc.score) : 0;
+  const lvInfo = sc && sc.score != null ? (opts.levelFn ? opts.levelFn(sc.score) : { lv: levelOf(sc.score), label: L.lv[levelOf(sc.score)] }) : null;
+  const lv = lvInfo ? lvInfo.lv : 0;
   const facs = (sc?.factors || []).map((f) => `<li><span>${esc(L.f[f.k](f.v, lang))}</span>${f.pts != null ? `<b>${f.pts ? L.pts(f.pts) : '0'}</b>` : ''}</li>`).join('');
-  const head = `<div class="hz-top"><i class="hz-ic ${icon}"></i><h3>${esc(C.t)}</h3>${lv ? `<span class="badge">${esc(L.lv[lv])}</span>` : ''}</div>`;
-  const bar = lv ? `<div class="bar"><i style="left:${sc.score}%"></i></div>
+  const head = `<div class="hz-top"><i class="hz-ic ${icon}"></i><h3>${esc(C.t)}</h3>${lv ? `<span class="badge">${esc(lvInfo.label)}</span>` : ''}</div>`;
+  const bar = lv ? `<div class="bar${opts.levelFn ? ' three' : ''}"><i style="left:${sc.score}%"></i></div>
     <div class="bar-meta"><span>${sc.score}/100${C.m ? ' · ' + esc(C.m) : ''}</span><span>${esc(L.conf[sc.confidence])}</span></div>`
     : (opts.noScoreText !== false ? `<p class="small muted" style="margin:.5rem 0 0">${esc(opts.noScoreText || L.noScore)}</p>` : '');
   const fac = facs ? `<details${opts.open ? ' open' : ''}><summary>${esc(L.factors)}</summary><ul class="factors">${facs}</ul></details>` : '';
@@ -264,25 +262,24 @@ function crimeCard(d) {
     const extra = `${cats ? `<h3>${esc(L.localTitle)}</h3><ul class="factors">${cats}</ul>` : ''}
       <p class="note">${esc(L.localNote)}</p>
       <p class="small"><a href="${esc(loc.url)}" target="_blank" rel="noopener">${esc(L.localSource)}</a></p>
-      ${ctry}${x?.crime?.blocks?.length ? officialHtml(d, [x.crime]) : ''}`;
+      ${ctry}${x?.crime?.blocks?.length ? officialHtml(d, [x.crime]) : ''}${tipList(L.tip.cr)}`;
     return scoreCard('cr', 'cr', g.cr, extra, { scope: L.crimeScopeLocal(loc.source), noScoreText: L.crimeFail, open: true });
   }
-  return scoreCard('cr', 'cr', g.cr, `${officialHtml(d, [x?.crime])}<p class="note">${esc(L.crimeNoLocal)}</p>`,
+  return scoreCard('cr', 'cr', g.cr, `${officialHtml(d, [x?.crime])}<p class="note">${esc(L.crimeNoLocal)}</p>${tipList(L.tip.cr)}`,
     { scope: L.crimeScope, noScoreText: L.crimeFail, open: true });
 }
 function titleCase(s) { return String(s).toLowerCase().replace(/(^|[\s/-])\p{L}/gu, (m) => m.toUpperCase()); }
+function trLevel(score) { const k = transportLevel(score); return { lv: [1, 3, 5][k], label: t().trLv[k] }; }
 function guideHtml(d) {
   const L = t(), g = d.guide, x = d.country?.text;
-  const vaccLink = (x?.health?.links || []).find((a) => /travelhealthpro/i.test(a.href));
-  const he = scoreCard('he', 'he', g.he, `${vaccLink ? `<p class="small"><a href="${esc(vaccLink.href)}" target="_blank" rel="noopener">${esc(L.vaccLink)}</a></p>` : ''}${officialHtml(d, [x?.vacc, x?.health], L.officialTitleH)}${tipList(L.tip.he)}`);
-  const tr = scoreCard('tr', 'trp', g.tr, `${officialHtml(d, [x?.transport])}${tipList(L.tip.trp)}`);
-  const fi = scoreCard('fi', 'fi', g.fi, `${officialHtml(d, [x?.money])}${tipList(L.tip.fi)}`);
+  const cr = crimeCard(d);
+  const tr = scoreCard('tr', 'trp', g.tr, `${officialHtml(d, [x?.transport])}${tipList(L.tip.trp)}`, { levelFn: trLevel });
   const la = g.la;
   const names = la.langs.map((l) => langName(l.code, lang, l.name)).join(', ');
   const laCard = `<div class="card hz-card lv0"><div class="hz-top"><i class="hz-ic la"></i><h3>${esc(L.cat.la.t)}</h3></div>
     <ul class="factors">${names ? `<li><span>${esc(L.langOfficial(names))}</span></li>` : ''}<li><span>${esc(L.langEng(la.englishOfficial))}</span></li></ul>
     <p class="note">${esc(L.langNote)}</p>${tipList(L.tip.la)}</div>`;
-  return `<p class="small muted" style="margin:0 2px 10px">${esc(L.guideIntro)}</p><div class="hz-grid">${he}${tr}${fi}${laCard}</div>`;
+  return `<p class="small muted" style="margin:0 2px 10px">${esc(L.guideIntro)}</p><div class="hz-grid">${cr}${tr}${laCard}</div>`;
 }
 
 // ---------- Kayıtlı değerlendirmeler ----------
@@ -297,19 +294,34 @@ function saveHistory(d) {
   }
   renderHistory();
 }
+const MAX_CMP = 3;
 function renderHistory() {
   const box = $('#history');
   if (!box) return;
   const h = loadHistory(), L = t();
   box.hidden = !h.length;
   if (!h.length) return;
-  box.innerHTML = `<div class="hist-head"><h3>${esc(L.history)}</h3><button class="link-btn" id="btnClearHist">${esc(L.clearAll)}</button></div>
+  const sel = state.cmpSel || (state.cmpSel = new Set());
+  for (const id of [...sel]) if (!h.some((e) => String(e.id) === id)) sel.delete(id);
+  const mode = !!state.cmpMode;
+  box.innerHTML = `<div class="hist-head"><h3>${esc(L.history)}</h3>
+      <div>${h.length >= 2 ? `<button class="link-btn" id="btnCmpMode">${esc(mode ? L.cancel : L.compare)}</button>` : ''}${mode ? '' : `<button class="link-btn" id="btnClearHist">${esc(L.clearAll)}</button>`}</div></div>
+    ${mode ? `<p class="small muted" style="margin:.3rem 0 0">${esc(L.cmpHint(MAX_CMP))}</p>` : ''}
     <ul class="results">${h.map((e) => {
       const lv = e.d.safety == null ? 0 : 6 - levelOf(e.d.safety);
-      return `<li data-id="${e.id}" class="lv${lv}"><span class="chip">${e.d.safety ?? '—'}</span><div style="flex:1"><b>${esc(e.d.place.name)}</b><small>${esc(e.d.place.label)}</small><small>${esc(L.when(e.d.date, lang))}</small></div>
-      <button class="x-btn" data-del="${e.id}" aria-label="${esc(L.del)}">×</button></li>`;
-    }).join('')}</ul>`;
+      const on = sel.has(String(e.id));
+      const right = mode ? `<span class="check ${on ? 'on' : ''}" aria-hidden="true">${on ? '✓' : ''}</span>` : `<button class="x-btn" data-del="${e.id}" aria-label="${esc(L.del)}">×</button>`;
+      return `<li data-id="${e.id}" class="lv${lv}${mode && on ? ' picked' : ''}"><span class="chip">${e.d.safety ?? '—'}</span><div style="flex:1"><b>${esc(e.d.place.name)}</b><small>${esc(e.d.place.label)}</small><small>${esc(L.when(e.d.date, lang))}</small></div>${right}</li>`;
+    }).join('')}</ul>
+    ${mode ? `<button class="btn primary" id="btnDoCmp" style="width:100%;margin-top:.6rem" ${sel.size >= 2 ? '' : 'disabled'}>${esc(L.cmpGo(sel.size))}</button>` : ''}`;
   box.querySelectorAll('li[data-id]').forEach((li) => li.addEventListener('click', (ev) => {
+    const id = li.dataset.id;
+    if (mode) {
+      if (sel.has(id)) sel.delete(id);
+      else if (sel.size < MAX_CMP) sel.add(id);
+      renderHistory();
+      return;
+    }
     const del = ev.target.closest('[data-del]');
     const all = loadHistory();
     if (del) {
@@ -317,14 +329,51 @@ function renderHistory() {
       renderHistory();
       return;
     }
-    const e = all.find((x) => String(x.id) === li.dataset.id);
+    const e = all.find((x) => String(x.id) === id);
     if (!e) return;
-    if (!e.d.guide) computeGuide(e.d);
+    computeGuide(e.d);
     state.report = e.d; state.report.saved = true; state.tab = 'risk';
     renderReport(e.d);
     show('report');
   }));
-  $('#btnClearHist').onclick = () => { if (confirm(L.confirmClear)) { store.set(HKEY, '[]'); renderHistory(); } };
+  if ($('#btnCmpMode')) $('#btnCmpMode').onclick = () => { state.cmpMode = !mode; if (!state.cmpMode) sel.clear(); renderHistory(); };
+  if ($('#btnClearHist')) $('#btnClearHist').onclick = () => { if (confirm(L.confirmClear)) { store.set(HKEY, '[]'); renderHistory(); } };
+  if ($('#btnDoCmp')) $('#btnDoCmp').onclick = () => { renderCompare(); show('compare'); };
+}
+
+// ---------- Karşılaştırma ----------
+function renderCompare() {
+  const L = t();
+  const ids = [...(state.cmpSel || [])];
+  const items = loadHistory().filter((e) => ids.includes(String(e.id))).map((e) => { computeGuide(e.d); return e.d; });
+  if (items.length < 2) { show('home'); return; }
+  // Her satır: değer, gösterilecek etiket, renk düzeyi; "better" = hangi yön daha iyi.
+  const hz = (k) => (d) => { const sc = d.scores?.[k]; return sc ? { v: sc.score, txt: `${L.lv[levelOf(sc.score)]} · ${sc.score}`, lv: levelOf(sc.score) } : null; };
+  const rows = [
+    { name: L.safety, better: 'high', get: (d) => d.safety == null ? null : { v: d.safety, txt: `${d.safety}/100`, lv: 6 - levelOf(d.safety) }, strong: true },
+    { name: L.hz.eq, better: 'low', get: hz('eq') },
+    { name: L.hz.fl, better: 'low', get: hz('fl') },
+    { name: L.hz.ls, better: 'low', get: hz('ls') },
+    { name: L.hz.av, better: 'low', get: hz('av') },
+    { name: L.cat.cr.t, better: 'low', get: (d) => { const sc = d.guide?.cr; return sc && sc.score != null ? { v: sc.score, txt: `${L.lv[levelOf(sc.score)]} · ${sc.score}`, lv: levelOf(sc.score), sub: sc.local ? L.cmpLocal : L.cmpCountry } : null; } },
+    { name: L.cat.tr.t, better: 'low', get: (d) => { const sc = d.guide?.tr; if (!sc || sc.score == null) return null; const x = trLevel(sc.score); return { v: sc.score, txt: x.label, lv: x.lv }; } },
+  ];
+  const head = items.map((d) => `<th><b>${esc(d.place.name)}</b><small>${esc(d.place.label)}</small></th>`).join('');
+  const body = rows.map((r) => {
+    const vals = items.map(r.get);
+    const nums = vals.filter(Boolean).map((x) => x.v);
+    const best = nums.length >= 2 ? (r.better === 'high' ? Math.max(...nums) : Math.min(...nums)) : null;
+    const allSame = nums.length >= 2 && nums.every((n) => n === nums[0]);
+    return `<tr${r.strong ? ' class="strong"' : ''}><th scope="row">${esc(r.name)}</th>${vals.map((x) => !x ? `<td class="muted">—</td>` :
+      `<td class="lv${x.lv}${best != null && !allSame && x.v === best ? ' best' : ''}"><span class="cell-chip">${esc(x.txt)}</span>${x.sub ? `<small>${esc(x.sub)}</small>` : ''}</td>`).join('')}</tr>`;
+  }).join('');
+  const safest = items.filter((d) => d.safety != null).sort((a, b) => b.safety - a.safety);
+  const lead = safest.length >= 2 && safest[0].safety !== safest[1].safety ? L.cmpLead(safest[0].place.name, safest[0].safety, safest[1].safety) : L.cmpTie;
+  $('#vCompare').innerHTML = `<div class="card"><h2 style="margin-bottom:.3rem">${esc(L.compareTitle)}</h2><p>${esc(lead)}</p></div>
+    <div class="card cmp-wrap"><table class="cmp"><thead><tr><th></th>${head}</tr></thead><tbody>${body}</tbody></table></div>
+    <p class="small muted">${esc(L.cmpNote)}</p>
+    <div class="actions"><button id="btnCmpBack" class="btn ghost">${esc(L.back)}</button></div>`;
+  $('#btnCmpBack').onclick = () => show('home');
 }
 
 // ---------- Rapor ----------
@@ -349,7 +398,6 @@ function tipsFor(d) {
   if (lv('fl') >= 3) tips.push(...L.tip.fl);
   if (lv('ls') >= 3) tips.push(...L.tip.ls);
   if (lv('av') >= 3) tips.push(...L.tip.av);
-  tips.push(...L.tip.cr);
   if (!(lv('eq') >= 2 && d.place.cc === 'TR')) tips.push(L.tip.gen);
   return tips;
 }
@@ -393,7 +441,7 @@ function renderReport(d) {
   const tabs = `<div class="tabs" role="tablist"><button data-tab="risk" class="${state.tab === 'risk' ? 'on' : ''}">${esc(L.tabRisk)}</button><button data-tab="guide" class="${state.tab === 'guide' ? 'on' : ''}">${esc(L.tabGuide)}</button></div>`;
   const riskTab = `
     <div class="card"><h3 style="margin-top:0">${esc(L.summary)}</h3>${summaryText(d).map((p) => `<p>${esc(p)}</p>`).join('')}</div>
-    <div class="hz-grid">${HZ.map((h) => hazardCard(h, d.scores[h])).join('')}${crimeCard(d)}</div>
+    <div class="hz-grid">${HZ.map((h) => hazardCard(h, d.scores[h])).join('')}</div>
     <div class="card" style="margin-top:14px">
       <h3 style="margin-top:0">${esc(L.map)}</h3>
       <div id="map" class="map"></div>
@@ -494,11 +542,9 @@ function share(d) {
     lines.push(`• ${L.hz[h]}: ${sc ? `${L.lv[levelOf(sc.score)]} (${sc.score}/100)` : L.noData}`);
   }
   const g = d.guide || {};
-  for (const k of ['cr', 'he', 'tr', 'fi']) {
-    const sc = g[k];
-    if (sc && sc.score != null) lines.push(`• ${L.cat[k].t}: ${L.lv[levelOf(sc.score)]} (${sc.score}/100)${k === 'cr' ? '' : ''}`);
-  }
-  if (g.cr || g.he) lines.push(`  (${L.guideIntro})`);
+  if (g.cr && g.cr.score != null) lines.push(`• ${L.cat.cr.t}: ${L.lv[levelOf(g.cr.score)]} (${g.cr.score}/100)`);
+  if (g.tr && g.tr.score != null) lines.push(`• ${L.cat.tr.t}: ${trLevel(g.tr.score).label}`);
+  if (g.cr || g.tr) lines.push(`  (${L.guideIntro})`);
   lines.push('', ...summaryText(d), '', L.disclaimer);
   const text = lines.join('\n');
   if (window.Android?.share) window.Android.share(text);

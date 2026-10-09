@@ -166,13 +166,8 @@ export async function loadPlaces(cc) {
 // ---------- Ülke göstergeleri (Dünya Bankası Açık Veri, CC BY 4.0) ----------
 export const WB = {
   hom: 'VC.IHR.PSRC.P5',        // kasten öldürme / 100.000 (UNODC)
-  malaria: 'SH.MLR.INCD.P3',    // sıtma vakası / 1.000 risk altındaki kişi (WHO)
-  water: 'SH.H2O.SMDW.ZS',      // güvenli yönetilen içme suyu kullanan nüfus % (WHO/UNICEF)
-  uhc: 'SH.UHC.SRVS.CV.XD',     // evrensel sağlık hizmeti kapsama endeksi 0–100 (WHO)
-  phys: 'SH.MED.PHYS.ZS',       // hekim / 1.000 kişi (WHO)
   road: 'SH.STA.TRAF.P5',       // trafik kazası ölümü / 100.000 (WHO)
   internet: 'IT.NET.USER.ZS',   // internet kullanan nüfus % (ITU)
-  account: 'FX.OWN.TOTL.ZS',    // banka / mobil para hesabı sahipliği, 15+ yaş % (Global Findex)
 };
 async function wbLatest(code, indicator) {
   const r = await getJSONAny(`https://api.worldbank.org/v2/country/${code}/indicator/${indicator}?format=json&mrnev=1`, 20000);

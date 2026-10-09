@@ -24,15 +24,14 @@ Yerli ve yabancı turistlerin konaklayacakları otelin ya da bölgenin **deprem,
 Her tehlike 0–100 puanlanır: 0–19 çok düşük, 20–39 düşük, 40–59 orta, 60–79 yüksek, 80–100 çok yüksek.
 Konum güvenlik puanı = 100 − (0,65 × en yüksek tehlike + 0,35 × ortalama tehlike).
 
-### Seyahat rehberi (ülke geneli)
+### Seyahat rehberi
 | Bölüm | Göstergeler |
 |---|---|
-| Sağlık ve hijyen | Sıtma vaka oranı (DSÖ) · sarıhumma riski (DSÖ listesi) · tropikal kuşak · güvenli içme suyuna erişim (WHO/UNICEF) · sağlık hizmeti kapsama endeksi · hekim sayısı · FCDO sağlık, ilaç ve aşı bölümleri · TravelHealthPro bağlantısı |
-| Ulaşım ve iletişim | Trafik kazası ölüm oranı (DSÖ) · internet kullanımı (ITU) · trafiğin aktığı yön · FCDO "Transport risks" bölümü |
-| Finans ve ödeme | Banka/mobil ödeme hesabı sahipliği (Global Findex) → nakit ihtiyacı · para birimi · FCDO para bölümü |
+| Suç ve kişisel güvenlik | Yukarıdaki suç değerlendirmesi (konum çevresi kayıtları veya ülke geneli) · FCDO "Crime" bölümü · öneriler |
+| Ulaşım ve iletişim | Trafik kazası ölüm oranı (DSÖ) × 1,5 (en fazla 50) + (100 − internet kullanımı %) × 0,35 (en fazla 35) → **0–29 kolay · 30–59 orta · 60+ zor** · trafiğin aktığı yön · FCDO "Transport risks" bölümü |
 | Dil | Resmi diller, İngilizcenin resmi dil olup olmadığı (puanlanmaz) |
 
-Önceki değerlendirmeler cihazda saklanır (en fazla 15), internetsiz de açılabilir ve "Güncelle" ile yenilenebilir.
+Önceki değerlendirmeler cihazda saklanır (en fazla 15), internetsiz de açılabilir ve "Güncelle" ile yenilenebilir. **Karşılaştır** ile en fazla 3 kayıt yan yana görülür: konum güvenlik puanı, deprem, sel, heyelan, çığ, suç ve ulaşım; her satırda en iyi değer işaretlenir.
 
 ## Veri kaynakları
 - Aktif faylar: GEM Global Active Faults Database (CC BY-SA 4.0) — uygulamaya gömülü
@@ -40,9 +39,8 @@ Konum güvenlik puanı = 100 − (0,65 × en yüksek tehlike + 0,35 × ortalama 
 - Yükseklik/eğim: Copernicus DEM GLO-90 (Open-Meteo)
 - Yağış ve kar: ERA5 (Open-Meteo Historical Weather)
 - Akarsu, kıyı, konum arama ve harita: © OpenStreetMap katkıcıları (Overpass, Nominatim)
-- Ülke göstergeleri: Dünya Bankası Açık Veri — UNODC, DSÖ, WHO/UNICEF JMP, ITU, Global Findex kaynaklı (CC BY 4.0)
-- Sarıhumma riski: DSÖ, sarıhumma bulaşma riski bulunan ülkeler (Kasım 2022)
-- Resmi dil ve para birimi: mledoze/countries (ODbL)
+- Ülke göstergeleri: Dünya Bankası Açık Veri — UNODC, DSÖ, ITU kaynaklı (CC BY 4.0)
+- Resmi diller: mledoze/countries (ODbL)
 - Yerel suç kayıtları: data.police.uk (Open Government Licence), City of Chicago ve DataSF açık veri portalları
 - Resmi seyahat bilgisi: GOV.UK Foreign travel advice (Open Government Licence v3.0)
 - Ülke/il/ilçe listesi: countries-states-cities veri seti (ODbL)
