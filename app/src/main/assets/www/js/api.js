@@ -163,21 +163,33 @@ export async function loadPlaces(cc) {
   return r.ok ? r.json() : [];
 }
 
-// ---------- Ülke geneli suç göstergesi (Dünya Bankası / UNODC) ----------
-// VC.IHR.PSRC.P5: 100.000 kişide kasten öldürme. Yan kesicilik gibi suçlar için ülkeler arası
-// karşılaştırılabilir açık istatistik bulunmadığından, ülke genelindeki resmi gösterge olarak kullanılır.
-async function wbLatest(code) {
-  const r = await getJSONAny(`https://api.worldbank.org/v2/country/${code}/indicator/VC.IHR.PSRC.P5?format=json&mrnev=1`, 20000);
+// ---------- Ülke göstergeleri (Dünya Bankası Açık Veri, CC BY 4.0) ----------
+export const WB = {
+  hom: 'VC.IHR.PSRC.P5',        // kasten öldürme / 100.000 (UNODC)
+  malaria: 'SH.MLR.INCD.P3',    // sıtma vakası / 1.000 risk altındaki kişi (WHO)
+  water: 'SH.H2O.SMDW.ZS',      // güvenli yönetilen içme suyu kullanan nüfus % (WHO/UNICEF)
+  uhc: 'SH.UHC.SRVS.CV.XD',     // evrensel sağlık hizmeti kapsama endeksi 0–100 (WHO)
+  phys: 'SH.MED.PHYS.ZS',       // hekim / 1.000 kişi (WHO)
+  road: 'SH.STA.TRAF.P5',       // trafik kazası ölümü / 100.000 (WHO)
+  internet: 'IT.NET.USER.ZS',   // internet kullanan nüfus % (ITU)
+  account: 'FX.OWN.TOTL.ZS',    // banka / mobil para hesabı sahipliği, 15+ yaş % (Global Findex)
+};
+async function wbLatest(code, indicator) {
+  const r = await getJSONAny(`https://api.worldbank.org/v2/country/${code}/indicator/${indicator}?format=json&mrnev=1`, 20000);
   const row = Array.isArray(r) && Array.isArray(r[1]) ? r[1].find((x) => x.value != null) : null;
   return row ? { value: row.value, year: row.date } : null;
 }
-export async function crimeIndicator(cc) {
-  const [country, world] = await Promise.all([wbLatest(cc), wbLatest('WLD').catch(() => null)]);
-  if (!country) throw new Error('no data');
-  return { country, world };
+export async function countryStats(cc) {
+  const keys = Object.keys(WB);
+  const vals = await Promise.all(keys.map((k) => wbLatest(cc, WB[k]).catch(() => undefined)));
+  const out = {};
+  keys.forEach((k, i) => { out[k] = vals[i] ?? null; });
+  if (vals.every((v) => v === undefined)) throw new Error('world bank unreachable');
+  out.homWorld = await wbLatest('WLD', WB.hom).catch(() => null);
+  return out;
 }
 
-// ---------- Resmi seyahat uyarısı: suç bölümü (GOV.UK, Open Government Licence v3.0) ----------
+// ---------- Resmi seyahat bilgisi (GOV.UK Foreign travel advice, Open Government Licence v3.0) ----------
 const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z]/g, '');
 let fcdoIndex = null;
 export async function travelAdvice(countryNameEn) {
@@ -192,32 +204,33 @@ export async function travelAdvice(countryNameEn) {
   const hit = fcdoIndex.find((c) => c.keys.includes(key)) || fcdoIndex.find((c) => c.keys.some((k) => k && (k.includes(key) || key.includes(k))));
   if (!hit) return null;
   const page = await getJSONAny('https://www.gov.uk/api/content' + hit.path, 25000);
-  const part = (page.details?.parts || []).find((p) => p.slug === 'safety-and-security');
-  if (!part) return null;
-  return {
-    url: 'https://www.gov.uk' + hit.path + '/safety-and-security',
-    updated: page.public_updated_at || page.updated_at || null,
-    blocks: extractCrime(part.body || ''),
-  };
+  const parts = {};
+  for (const p of page.details?.parts || []) parts[p.slug] = p.body || '';
+  return { base: 'https://www.gov.uk' + hit.path, updated: page.public_updated_at || page.updated_at || null, parts };
 }
 
-// HTML gövdesinden yalnızca "Crime" başlığı altındaki metni düz metin olarak çıkarır.
-export function extractCrime(html) {
+// HTML gövdesinden bir başlık altındaki metni düz metin blokları olarak çıkarır (HTML olarak gösterilmez).
+// re verilmezse gövdenin tamamı alınır.
+export function extractSection(html, re, max = 30) {
+  if (!html) return { blocks: [], links: [] };
   const doc = new DOMParser().parseFromString(html, 'text/html');
   const all = [...doc.body.children];
-  let start = all.findIndex((el) => /^H[23]$/.test(el.tagName) && /crime/i.test(el.textContent));
-  const out = [];
-  if (start >= 0) {
-    const lvl = all[start].tagName;
-    for (let i = start + 1; i < all.length; i++) {
-      const el = all[i];
-      if (el.tagName === lvl || (lvl === 'H3' && el.tagName === 'H2')) break;
-      if (/^H[3-4]$/.test(el.tagName)) out.push({ h: el.textContent.trim() });
-      else if (el.tagName === 'UL' || el.tagName === 'OL') out.push({ li: [...el.querySelectorAll('li')].map((li) => li.textContent.trim()) });
-      else if (el.textContent.trim()) out.push({ p: el.textContent.trim() });
-    }
-  } else {
-    doc.querySelectorAll('p').forEach((p) => { if (/pickpocket|theft|robber|crime|scam/i.test(p.textContent)) out.push({ p: p.textContent.trim() }); });
+  let from = 0, lvl = null;
+  if (re) {
+    from = all.findIndex((el) => /^H[2-4]$/.test(el.tagName) && re.test(el.textContent));
+    if (from < 0) return { blocks: [], links: [] };
+    lvl = +all[from].tagName[1];
+    from++;
   }
-  return out.slice(0, 30);
+  const blocks = [], links = [];
+  for (let i = from; i < all.length; i++) {
+    const el = all[i];
+    const h = /^H([2-6])$/.exec(el.tagName);
+    if (h && lvl != null && +h[1] <= lvl) break;
+    el.querySelectorAll('a[href]').forEach((a) => links.push({ text: a.textContent.trim(), href: a.getAttribute('href') }));
+    if (h) blocks.push({ h: el.textContent.trim() });
+    else if (el.tagName === 'UL' || el.tagName === 'OL') blocks.push({ li: [...el.querySelectorAll('li')].map((li) => li.textContent.trim()).filter(Boolean) });
+    else if (el.textContent.trim()) blocks.push({ p: el.textContent.trim() });
+  }
+  return { blocks: blocks.slice(0, max), links };
 }

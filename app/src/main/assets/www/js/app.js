@@ -1,4 +1,5 @@
-import { T, fmt } from './i18n.js';
+import { T, fmt, langName } from './i18n.js';
+import { scoreCrime, scoreHealth, scoreTransport, scoreFinance, languageInfo } from './guide.js';
 import * as api from './api.js';
 import {
   terrainStats, climateStats, quakeStats, nearestFault, waterStats,
@@ -15,7 +16,7 @@ const store = {
 let lang = store.get('lang') || ((navigator.language || 'tr').toLowerCase().startsWith('tr') ? 'tr' : 'en');
 const t = () => T[lang];
 const HZ = ['eq', 'fl', 'ls', 'av'];
-const state = { countries: [], places: [], report: null, view: 'home' };
+const state = { countries: [], places: [], report: null, view: 'home', tab: 'risk', info: {} };
 
 // ---------- Dil ----------
 function get(obj, path) { return path.split('.').reduce((o, k) => (o ? o[k] : undefined), obj); }
@@ -27,6 +28,7 @@ function applyLang() {
   $('#btnLang').textContent = t().lang;
   $('#aboutSources').innerHTML = t().srcList.map((s) => `<li>${esc(s)}</li>`).join('');
   fillCountries(true);
+  renderHistory();
   if (state.report && state.view === 'report') renderReport(state.report);
 }
 
@@ -51,7 +53,7 @@ function countryName(code, fallback) {
 }
 function fillCountries(keep) {
   const sel = $('#selCountry');
-  const cur = keep ? sel.value : (store.get('country') || 'TR');
+  const cur = (keep && sel.value) || store.get('country') || 'TR';
   const list = state.countries.map((c) => ({ code: c[0], name: countryName(c[0], c[1]) }))
     .sort((a, b) => a.name.localeCompare(b.name, lang));
   sel.innerHTML = list.map((c) => `<option value="${c.code}">${esc(c.name)}</option>`).join('');
@@ -61,14 +63,19 @@ function fillCountries(keep) {
 }
 async function onCountry() {
   const cc = $('#selCountry').value;
-  store.set('country', cc);
+  if (!restoring) { store.set('country', cc); store.set('stateName', ''); store.set('cityName', ''); }
   state.places = await api.loadPlaces(cc);
   const s = $('#selState');
   s.innerHTML = `<option value="">${esc(t().choose)}</option>` +
     state.places.map((p, i) => `<option value="${i}">${esc(p[1])}</option>`).join('');
   s.disabled = !state.places.length;
+  if (restoring && store.get('stateName')) {
+    const i = state.places.findIndex((p) => p[1] === store.get('stateName'));
+    if (i >= 0) s.value = String(i);
+  }
   onState();
 }
+let restoring = true;
 function onState() {
   const p = state.places[$('#selState').value];
   const c = $('#selCity');
@@ -76,6 +83,16 @@ function onState() {
   c.innerHTML = `<option value="">${esc(t().allCities)}</option>` +
     cities.filter((x) => x[0] !== p[1]).map((x, i) => `<option value="${cities.indexOf(x)}">${esc(x[0])}</option>`).join('');
   c.disabled = !p || !cities.length;
+  if (restoring && p && store.get('cityName')) {
+    const i = cities.findIndex((x) => x[0] === store.get('cityName'));
+    if (i >= 0) c.value = String(i);
+  }
+  if (!restoring) store.set('stateName', p ? p[1] : '');
+}
+function onCity() {
+  const p = state.places[$('#selState').value];
+  const city = p && p[4][$('#selCity').value];
+  store.set('cityName', city ? city[0] : '');
 }
 function region() {
   const cc = $('#selCountry').value;
@@ -130,7 +147,7 @@ function onCenter() {
 async function evaluate(place) {
   show('progress');
   $('#progPlace').textContent = place.label;
-  const keys = ['faults', 'quakes', 'terrain', 'climate', 'water', 'crime'];
+  const keys = ['faults', 'quakes', 'terrain', 'climate', 'water', 'country'];
   $('#stepList').innerHTML = keys.map((k) => `<li id="st-${k}" class="run">${esc(t().steps[k])}</li>`).join('');
   const mark = (k, ok) => {
     const li = $('#st-' + k);
@@ -140,13 +157,13 @@ async function evaluate(place) {
   };
   const run = (k, fn) => fn().then((v) => { mark(k, true); return v; }, (e) => { console.warn(k, e); mark(k, false); return null; });
   const { lat, lon } = place;
-  const [faults, quakes, elev, daily, water, crime] = await Promise.all([
+  const [faults, quakes, elev, daily, water, country] = await Promise.all([
     run('faults', () => api.faultsAround(lat, lon)),
     run('quakes', () => api.earthquakes(lat, lon, 150)),
     run('terrain', () => api.elevationGrid(lat, lon)),
     run('climate', () => api.climateHistory(lat, lon)),
     run('water', () => api.waterways(lat, lon)),
-    run('crime', () => loadCrime(place.cc)),
+    run('country', () => loadCountry(place.cc)),
   ]);
   const data = {
     place,
@@ -155,7 +172,7 @@ async function evaluate(place) {
     terrain: elev ? terrainStats(elev) : null,
     climate: daily ? climateStats(daily) : null,
     water: water ? waterStats(lat, lon, water) : null,
-    crime,
+    country,
     failed: [!quakes && 'quakes', !elev && 'terrain', !daily && 'climate', !water && 'water'].filter(Boolean),
     date: Date.now(),
   };
@@ -173,49 +190,125 @@ async function evaluate(place) {
     av: scoreAvalanche({ terrain: data.terrain, climate: data.climate }),
   };
   data.safety = overall(data.scores);
+  computeGuide(data);
   state.report = data;
+  state.tab = 'risk';
+  saveHistory(data);
   renderReport(data);
   show('report');
 }
 
-// ---------- Suç (ülke geneli) ----------
-async function loadCrime(cc) {
+// ---------- Ülke rehberi (suç, sağlık, ulaşım, finans, dil) ----------
+async function loadCountry(cc) {
   const en = state.countries.find((c) => c[0] === cc)?.[1];
-  const [stats, advice] = await Promise.allSettled([api.crimeIndicator(cc), en ? api.travelAdvice(en) : Promise.resolve(null)]);
+  const [stats, advice] = await Promise.allSettled([api.countryStats(cc), en ? api.travelAdvice(en) : Promise.resolve(null)]);
   const out = { stats: stats.status === 'fulfilled' ? stats.value : null, advice: advice.status === 'fulfilled' ? advice.value : null };
-  if (!out.stats && !out.advice) throw new Error('crime data unavailable');
+  if (!out.stats && !out.advice) throw new Error('country data unavailable');
+  // Resmi metinden yalnızca ilgili bölümler saklanır (düz metin).
+  const P = out.advice?.parts || {};
+  out.text = out.advice ? {
+    crime: api.extractSection(P['safety-and-security'], /^\s*crime\s*$/i),
+    transport: api.extractSection(P['safety-and-security'], /transport risks/i),
+    health: api.extractSection(P.health, null, 40),
+    vacc: api.extractSection(P['entry-requirements'], /vaccin/i),
+    money: api.extractSection(P['entry-requirements'], /money|currency|cash/i),
+  } : null;
+  if (out.advice) { out.base = out.advice.base; out.updated = out.advice.updated; delete out.advice; }
   return out;
 }
-function crimeLevel(st) {
-  if (!st || !st.world) return 0;
-  const r = st.country.value / st.world.value;
-  return r < 0.5 ? 1 : r < 1 ? 2 : r < 2 ? 3 : r < 4 ? 4 : 5;
+function computeGuide(d) {
+  const c = d.country, st = c?.stats || null, info = state.info[d.place.cc];
+  d.guide = {
+    cr: scoreCrime(st, !!c?.text?.crime?.blocks.length),
+    he: scoreHealth(st, d.place.cc, d.place.lat),
+    tr: scoreTransport(st, d.place.cc),
+    fi: scoreFinance(st, info),
+    la: languageInfo(info),
+  };
 }
-function crimeCard(c) {
-  const L = t();
-  const st = c?.stats, adv = c?.advice;
-  const lv = crimeLevel(st);
-  const statHtml = st ? `
-    ${lv ? `<div class="hz-top" style="margin-top:.6rem"><span class="small muted" style="flex:1">${esc(L.crimeRatio(st.country.value / st.world.value, lang))}</span><span class="badge">${esc(L.lv[lv])}</span></div>` : ''}
-    <ul class="factors">
-      <li><span>${esc(L.crimeHom(st.country.value, st.country.year, lang))}</span></li>
-      ${st.world ? `<li><span>${esc(L.crimeWorld(st.world.value, st.world.year, lang))}</span></li>` : ''}
-    </ul>
-    ${lv ? `<p class="small muted">${esc(L.crimeLvNote)}</p>` : ''}` : `<p class="small muted">${esc(L.crimeFail)}</p>`;
-  const advBody = adv && adv.blocks.length ? adv.blocks.map((b) => b.h ? `<h4>${esc(b.h)}</h4>` : b.li ? `<ul>${b.li.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : `<p>${esc(b.p)}</p>`).join('') : '';
-  const advHtml = advBody ? `
-    <h3>${esc(L.adviceTitle)}</h3>
+function blocksHtml(bl) {
+  return bl.map((b) => b.h ? `<h4>${esc(b.h)}</h4>` : b.li ? `<ul>${b.li.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : `<p>${esc(b.p)}</p>`).join('');
+}
+function officialHtml(d, sections, title) {
+  const L = t(), c = d.country;
+  const bl = sections.flatMap((x) => x?.blocks || []);
+  if (!bl.length) return c?.base ? '' : `<p class="small muted">${esc(L.adviceNone)}</p>`;
+  return `<h3>${esc(title || L.officialTitle)}</h3>
     ${L.adviceLang ? `<p class="small muted">${esc(L.adviceLang)}</p>` : ''}
-    <details><summary>${esc(L.adviceShow)}</summary><div class="advice" lang="en">${advBody}</div></details>
-    <p class="small muted">${adv.updated ? `${esc(L.adviceUpdated)}: ${esc(L.when(adv.updated, lang))} · ` : ''}<a href="${esc(adv.url)}" target="_blank" rel="noopener">${esc(L.adviceMore)}</a></p>`
-    : `<p class="small muted">${esc(L.adviceNone)}</p>`;
-  return `<div class="card lv${lv}" style="margin-top:14px">
-    <div class="hz-top"><i class="hz-ic cr"></i><h3>${esc(L.crimeTitle)}</h3></div>
-    <p class="small muted" style="margin:.3rem 0 0">${esc(L.crimeScope)}</p>
-    ${statHtml}
-    ${advHtml}
-    <p class="note">${esc(L.crimeNoLocal)}</p>
-  </div>`;
+    <details><summary>${esc(L.adviceShow)}</summary><div class="advice" lang="en">${blocksHtml(bl)}</div></details>
+    <p class="small muted">${c.updated ? `${esc(L.adviceUpdated)}: ${esc(L.when(c.updated, lang))} · ` : ''}<a href="${esc(c.base)}" target="_blank" rel="noopener">${esc(L.adviceMore)}</a></p>`;
+}
+function scoreCard(key, icon, sc, extra = '', opts = {}) {
+  const L = t(), C = L.cat[key];
+  const lv = sc && sc.score != null ? levelOf(sc.score) : 0;
+  const facs = (sc?.factors || []).map((f) => `<li><span>${esc(L.f[f.k](f.v, lang))}</span>${f.pts != null ? `<b>${f.pts ? L.pts(f.pts) : '0'}</b>` : ''}</li>`).join('');
+  const head = `<div class="hz-top"><i class="hz-ic ${icon}"></i><h3>${esc(C.t)}</h3>${lv ? `<span class="badge">${esc(L.lv[lv])}</span>` : ''}</div>`;
+  const bar = lv ? `<div class="bar"><i style="left:${sc.score}%"></i></div>
+    <div class="bar-meta"><span>${sc.score}/100${C.m ? ' · ' + esc(C.m) : ''}</span><span>${esc(L.conf[sc.confidence])}</span></div>`
+    : (opts.noScoreText !== false ? `<p class="small muted" style="margin:.5rem 0 0">${esc(opts.noScoreText || L.noScore)}</p>` : '');
+  const fac = facs ? `<details${opts.open ? ' open' : ''}><summary>${esc(L.factors)}</summary><ul class="factors">${facs}</ul></details>` : '';
+  return `<div class="card hz-card lv${lv}">${head}${opts.scope ? `<p class="small muted" style="margin:.3rem 0 0">${esc(opts.scope)}</p>` : ''}${bar}${fac}${extra}</div>`;
+}
+function tipList(arr) { return `<h3>${esc(t().tips)}</h3><ul class="tips small">${arr.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>`; }
+function crimeCard(d) {
+  const L = t(), x = d.country?.text;
+  return scoreCard('cr', 'cr', d.guide.cr, `${officialHtml(d, [x?.crime])}<p class="note">${esc(L.crimeNoLocal)}</p>`,
+    { scope: L.crimeScope, noScoreText: L.crimeFail, open: true });
+}
+function guideHtml(d) {
+  const L = t(), g = d.guide, x = d.country?.text;
+  const vaccLink = (x?.health?.links || []).find((a) => /travelhealthpro/i.test(a.href));
+  const he = scoreCard('he', 'he', g.he, `${vaccLink ? `<p class="small"><a href="${esc(vaccLink.href)}" target="_blank" rel="noopener">${esc(L.vaccLink)}</a></p>` : ''}${officialHtml(d, [x?.vacc, x?.health], L.officialTitleH)}${tipList(L.tip.he)}`);
+  const tr = scoreCard('tr', 'trp', g.tr, `${officialHtml(d, [x?.transport])}${tipList(L.tip.trp)}`);
+  const fi = scoreCard('fi', 'fi', g.fi, `${officialHtml(d, [x?.money])}${tipList(L.tip.fi)}`);
+  const la = g.la;
+  const names = la.langs.map((l) => langName(l.code, lang, l.name)).join(', ');
+  const laCard = `<div class="card hz-card lv0"><div class="hz-top"><i class="hz-ic la"></i><h3>${esc(L.cat.la.t)}</h3></div>
+    <ul class="factors">${names ? `<li><span>${esc(L.langOfficial(names))}</span></li>` : ''}<li><span>${esc(L.langEng(la.englishOfficial))}</span></li></ul>
+    <p class="note">${esc(L.langNote)}</p>${tipList(L.tip.la)}</div>`;
+  return `<p class="small muted" style="margin:0 2px 10px">${esc(L.guideIntro)}</p><div class="hz-grid">${he}${tr}${fi}${laCard}</div>`;
+}
+
+// ---------- Kayıtlı değerlendirmeler ----------
+const HKEY = 'history';
+function loadHistory() { try { return JSON.parse(store.get(HKEY) || '[]'); } catch (_) { return []; } }
+function saveHistory(d) {
+  let h = loadHistory().filter((e) => !(Math.abs(e.d.place.lat - d.place.lat) < 1e-4 && Math.abs(e.d.place.lon - d.place.lon) < 1e-4));
+  h.unshift({ id: Date.now(), d });
+  h = h.slice(0, 15);
+  while (h.length) {
+    try { localStorage.setItem(HKEY, JSON.stringify(h)); break; } catch (_) { h.pop(); }
+  }
+  renderHistory();
+}
+function renderHistory() {
+  const box = $('#history');
+  if (!box) return;
+  const h = loadHistory(), L = t();
+  box.hidden = !h.length;
+  if (!h.length) return;
+  box.innerHTML = `<div class="hist-head"><h3>${esc(L.history)}</h3><button class="link-btn" id="btnClearHist">${esc(L.clearAll)}</button></div>
+    <ul class="results">${h.map((e) => {
+      const lv = e.d.safety == null ? 0 : 6 - levelOf(e.d.safety);
+      return `<li data-id="${e.id}" class="lv${lv}"><span class="chip">${e.d.safety ?? '—'}</span><div style="flex:1"><b>${esc(e.d.place.name)}</b><small>${esc(e.d.place.label)}</small><small>${esc(L.when(e.d.date, lang))}</small></div>
+      <button class="x-btn" data-del="${e.id}" aria-label="${esc(L.del)}">×</button></li>`;
+    }).join('')}</ul>`;
+  box.querySelectorAll('li[data-id]').forEach((li) => li.addEventListener('click', (ev) => {
+    const del = ev.target.closest('[data-del]');
+    const all = loadHistory();
+    if (del) {
+      store.set(HKEY, JSON.stringify(all.filter((e) => String(e.id) !== del.dataset.del)));
+      renderHistory();
+      return;
+    }
+    const e = all.find((x) => String(x.id) === li.dataset.id);
+    if (!e) return;
+    if (!e.d.guide) computeGuide(e.d);
+    state.report = e.d; state.report.saved = true; state.tab = 'risk';
+    renderReport(e.d);
+    show('report');
+  }));
+  $('#btnClearHist').onclick = () => { if (confirm(L.confirmClear)) { store.set(HKEY, '[]'); renderHistory(); } };
 }
 
 // ---------- Rapor ----------
@@ -280,7 +373,20 @@ function renderReport(d) {
       </div>
     </div>`;
 
-  $('#vReport').innerHTML = `
+  const saved = d.saved ? `<div class="saved-bar"><span>${esc(L.savedOn(L.when(d.date, lang)))}</span><button id="btnRefresh" class="link-btn">${esc(L.refresh)}</button></div>` : '';
+  const tabs = `<div class="tabs" role="tablist"><button data-tab="risk" class="${state.tab === 'risk' ? 'on' : ''}">${esc(L.tabRisk)}</button><button data-tab="guide" class="${state.tab === 'guide' ? 'on' : ''}">${esc(L.tabGuide)}</button></div>`;
+  const riskTab = `
+    <div class="card"><h3 style="margin-top:0">${esc(L.summary)}</h3>${summaryText(d).map((p) => `<p>${esc(p)}</p>`).join('')}</div>
+    <div class="hz-grid">${HZ.map((h) => hazardCard(h, d.scores[h])).join('')}${crimeCard(d)}</div>
+    <div class="card" style="margin-top:14px">
+      <h3 style="margin-top:0">${esc(L.map)}</h3>
+      <div id="map" class="map"></div>
+      <div class="legend"><span><i></i>${esc(L.faultLegend)}</span><span><i class="dot"></i> ${esc(L.selected)}</span></div>
+      <div class="actions" style="margin-top:.7rem"><button id="btnOpenMap" class="btn ghost">${esc(L.openMap)}</button></div>
+    </div>
+    ${quakeHtml}
+    <div class="card"><h3 style="margin-top:0">${esc(L.tips)}</h3><ul class="tips">${tipsFor(d).map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>`;
+  $('#vReport').innerHTML = saved + `
     <div class="card">
       <div class="r-head">
         <div class="ring lv${safeLv}" style="--v:${d.safety ?? 0}"><div><span><b>${d.safety ?? '—'}</b><br><small>/ 100</small></span></div></div>
@@ -294,24 +400,19 @@ function renderReport(d) {
       </div>
       <p class="small muted" style="margin-top:.7rem">${esc(L.safetyNote)}</p>
     </div>
-    <div class="card"><h3 style="margin-top:0">${esc(L.summary)}</h3>${summaryText(d).map((p) => `<p>${esc(p)}</p>`).join('')}</div>
-    <div class="hz-grid">${HZ.map((h) => hazardCard(h, d.scores[h])).join('')}</div>
-    <div class="card" style="margin-top:14px">
-      <h3 style="margin-top:0">${esc(L.map)}</h3>
-      <div id="map" class="map"></div>
-      <div class="legend"><span><i></i>${esc(L.faultLegend)}</span><span><i class="dot"></i> ${esc(L.selected)}</span></div>
-      <div class="actions" style="margin-top:.7rem"><button id="btnOpenMap" class="btn ghost">${esc(L.openMap)}</button></div>
-    </div>
-    ${quakeHtml}
-    ${crimeCard(d.crime)}
-    <div class="card"><h3 style="margin-top:0">${esc(L.tips)}</h3><ul class="tips">${tipsFor(d).map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>
-    <div class="actions"><button id="btnShare" class="btn primary">${esc(L.share)}</button><button id="btnNew" class="btn ghost">${esc(L.newSearch)}</button></div>
+    ${tabs}
+    ${state.tab === 'risk' ? riskTab : guideHtml(d)}
+    <div class="actions" style="margin-top:14px"><button id="btnShare" class="btn primary">${esc(L.share)}</button><button id="btnNew" class="btn ghost">${esc(L.newSearch)}</button></div>
     <div class="card" style="margin-top:14px"><h3 style="margin-top:0">${esc(L.sources)}</h3>
       <ul class="small" style="padding-left:1.1rem">${L.srcList.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>
       <p class="small muted">${esc(L.disclaimer)}</p></div>`;
 
-  drawMap($('#map'), d.place.lat, d.place.lon, d.fault?.nearby || [], fitZoom(d.place.lat, d.fault?.nearby?.length ? d.fault.distKm : null));
-  $('#btnOpenMap').onclick = () => openMap(d.place);
+  if (state.tab === 'risk') {
+    drawMap($('#map'), d.place.lat, d.place.lon, d.fault?.nearby || [], fitZoom(d.place.lat, d.fault?.nearby?.length ? d.fault.distKm : null));
+    $('#btnOpenMap').onclick = () => openMap(d.place);
+  }
+  document.querySelectorAll('.tabs [data-tab]').forEach((b) => { b.onclick = () => { state.tab = b.dataset.tab; renderReport(d); }; });
+  if ($('#btnRefresh')) $('#btnRefresh').onclick = () => evaluate(d.place);
   $('#btnShare').onclick = () => share(d);
   $('#btnNew').onclick = () => show('home');
 }
@@ -376,8 +477,12 @@ function share(d) {
     const sc = d.scores[h];
     lines.push(`• ${L.hz[h]}: ${sc ? `${L.lv[levelOf(sc.score)]} (${sc.score}/100)` : L.noData}`);
   }
-  const st = d.crime?.stats;
-  if (st) lines.push(`• ${L.crimeTitle}: ${L.crimeHom(st.country.value, st.country.year, lang)} — ${L.crimeScope}`);
+  const g = d.guide || {};
+  for (const k of ['cr', 'he', 'tr', 'fi']) {
+    const sc = g[k];
+    if (sc && sc.score != null) lines.push(`• ${L.cat[k].t}: ${L.lv[levelOf(sc.score)]} (${sc.score}/100)${k === 'cr' ? '' : ''}`);
+  }
+  if (g.cr || g.he) lines.push(`  (${L.guideIntro})`);
   lines.push('', ...summaryText(d), '', L.disclaimer);
   const text = lines.join('\n');
   if (window.Android?.share) window.Android.share(text);
@@ -393,13 +498,16 @@ async function init() {
   $('#about').onclick = (e) => { if (e.target.id === 'about') $('#about').hidden = true; };
   $('#btnBack').onclick = () => window.appBack();
   $('#selCountry').onchange = onCountry;
-  $('#selState').onchange = onState;
+  $('#selState').onchange = () => { onState(); onCity(); };
+  $('#selCity').onchange = onCity;
   $('#btnFind').onclick = onFind;
   $('#btnCenter').onclick = onCenter;
   $('#inpPlace').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); onFind(); } });
   state.countries = await api.loadCountries();
+  try { state.info = await (await fetch('data/countryinfo.json')).json(); } catch (_) { state.info = {}; }
   applyLang();
   await onCountry();
+  restoring = false;
   show('home');
 }
 init();

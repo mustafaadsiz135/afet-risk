@@ -15,13 +15,23 @@ Yerli ve yabancı turistlerin konaklayacakları otelin ya da bölgenin **deprem,
 | Heyelan | Konumdaki eğim · 2 km'lik alandaki yükseklik farkı · yıllık ve aşırı yağış · deprem tehlikesi |
 | Çığ | Yıllık kar yağışı · 28°–50° eğimli alan oranı · yükseklik |
 
-### Suç ve kişisel güvenlik (ülke geneli)
-- Dünya Bankası / UNODC kasten öldürme oranı (100.000 kişide), dünya ortalamasıyla karşılaştırmalı.
+### Suç ve kişisel güvenlik (ülke geneli, puanlı)
+- Dünya Bankası / UNODC kasten öldürme oranı (100.000 kişide), dünya ortalamasıyla karşılaştırmalı. Oran dünya ortalamasının 0,5 katından az: çok düşük · 1 katından az: düşük · 1,5 katından az: orta · 1,5–3 kat: **yüksek** · 3 kat ve üzeri: çok yüksek.
 - Birleşik Krallık Dışişleri (FCDO) resmi seyahat bilgisinin "Crime" bölümü (yan kesicilik, dolandırıcılık, taksi güvenliği vb.), İngilizce ve değiştirilmeden.
 - Yan kesicilik gibi suçlar için ilçe/otel düzeyinde karşılaştırılabilir güvenilir açık veri olmadığından konuma özel suç puanı verilmez ve suç göstergesi konum güvenlik puanına katılmaz.
 
 Her tehlike 0–100 puanlanır: 0–19 çok düşük, 20–39 düşük, 40–59 orta, 60–79 yüksek, 80–100 çok yüksek.
 Konum güvenlik puanı = 100 − (0,65 × en yüksek tehlike + 0,35 × ortalama tehlike).
+
+### Seyahat rehberi (ülke geneli)
+| Bölüm | Göstergeler |
+|---|---|
+| Sağlık ve hijyen | Sıtma vaka oranı (DSÖ) · sarıhumma riski (DSÖ listesi) · tropikal kuşak · güvenli içme suyuna erişim (WHO/UNICEF) · sağlık hizmeti kapsama endeksi · hekim sayısı · FCDO sağlık, ilaç ve aşı bölümleri · TravelHealthPro bağlantısı |
+| Ulaşım ve iletişim | Trafik kazası ölüm oranı (DSÖ) · internet kullanımı (ITU) · trafiğin aktığı yön · FCDO "Transport risks" bölümü |
+| Finans ve ödeme | Banka/mobil ödeme hesabı sahipliği (Global Findex) → nakit ihtiyacı · para birimi · FCDO para bölümü |
+| Dil | Resmi diller, İngilizcenin resmi dil olup olmadığı (puanlanmaz) |
+
+Önceki değerlendirmeler cihazda saklanır (en fazla 15), internetsiz de açılabilir ve "Güncelle" ile yenilenebilir.
 
 ## Veri kaynakları
 - Aktif faylar: GEM Global Active Faults Database (CC BY-SA 4.0) — uygulamaya gömülü
@@ -29,7 +39,9 @@ Konum güvenlik puanı = 100 − (0,65 × en yüksek tehlike + 0,35 × ortalama 
 - Yükseklik/eğim: Copernicus DEM GLO-90 (Open-Meteo)
 - Yağış ve kar: ERA5 (Open-Meteo Historical Weather)
 - Akarsu, kıyı, konum arama ve harita: © OpenStreetMap katkıcıları (Overpass, Nominatim)
-- Suç istatistiği: Dünya Bankası / UNODC (CC BY 4.0)
+- Ülke göstergeleri: Dünya Bankası Açık Veri — UNODC, DSÖ, WHO/UNICEF JMP, ITU, Global Findex kaynaklı (CC BY 4.0)
+- Sarıhumma riski: DSÖ, sarıhumma bulaşma riski bulunan ülkeler (Kasım 2022)
+- Resmi dil ve para birimi: mledoze/countries (ODbL)
 - Resmi seyahat bilgisi: GOV.UK Foreign travel advice (Open Government Licence v3.0)
 - Ülke/il/ilçe listesi: countries-states-cities veri seti (ODbL)
 
