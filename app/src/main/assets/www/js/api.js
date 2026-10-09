@@ -14,6 +14,30 @@ async function getJSON(url, { timeout = 25000, init = {} } = {}) {
   }
 }
 
+// CORS izni vermeyen resmi kaynaklar için Android tarafındaki yerel HTTP köprüsü (yalnızca izinli alan adları).
+const pendingNative = new Map();
+let nativeSeq = 0;
+window.__nativeHttp = (id, ok, body) => {
+  const p = pendingNative.get(id);
+  if (!p) return;
+  pendingNative.delete(id);
+  ok ? p.res(body) : p.rej(new Error(body || 'native'));
+};
+function nativeGet(url, timeout) {
+  return new Promise((res, rej) => {
+    const id = ++nativeSeq;
+    pendingNative.set(id, { res, rej });
+    setTimeout(() => { if (pendingNative.delete(id)) rej(new Error('timeout')); }, timeout);
+    window.Android.httpGet(id, url);
+  });
+}
+async function getJSONAny(url, timeout = 25000) {
+  try { return await getJSON(url, { timeout }); } catch (e) {
+    if (!window.Android?.httpGet) throw e;
+    return JSON.parse(await nativeGet(url, timeout));
+  }
+}
+
 async function firstOk(urls, opts) {
   let err;
   for (const u of urls) {
@@ -137,4 +161,63 @@ export async function loadCountries() {
 export async function loadPlaces(cc) {
   const r = await fetch(`data/places/${cc}.json`);
   return r.ok ? r.json() : [];
+}
+
+// ---------- Ülke geneli suç göstergesi (Dünya Bankası / UNODC) ----------
+// VC.IHR.PSRC.P5: 100.000 kişide kasten öldürme. Yan kesicilik gibi suçlar için ülkeler arası
+// karşılaştırılabilir açık istatistik bulunmadığından, ülke genelindeki resmi gösterge olarak kullanılır.
+async function wbLatest(code) {
+  const r = await getJSONAny(`https://api.worldbank.org/v2/country/${code}/indicator/VC.IHR.PSRC.P5?format=json&mrnev=1`, 20000);
+  const row = Array.isArray(r) && Array.isArray(r[1]) ? r[1].find((x) => x.value != null) : null;
+  return row ? { value: row.value, year: row.date } : null;
+}
+export async function crimeIndicator(cc) {
+  const [country, world] = await Promise.all([wbLatest(cc), wbLatest('WLD').catch(() => null)]);
+  if (!country) throw new Error('no data');
+  return { country, world };
+}
+
+// ---------- Resmi seyahat uyarısı: suç bölümü (GOV.UK, Open Government Licence v3.0) ----------
+const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z]/g, '');
+let fcdoIndex = null;
+export async function travelAdvice(countryNameEn) {
+  if (!fcdoIndex) {
+    const idx = await getJSONAny('https://www.gov.uk/api/content/foreign-travel-advice', 25000);
+    fcdoIndex = (idx.links?.children || []).map((c) => ({
+      path: c.base_path,
+      keys: [c.details?.country?.name, c.details?.country?.slug, ...(c.details?.country?.synonyms || [])].map(norm),
+    }));
+  }
+  const key = norm(countryNameEn);
+  const hit = fcdoIndex.find((c) => c.keys.includes(key)) || fcdoIndex.find((c) => c.keys.some((k) => k && (k.includes(key) || key.includes(k))));
+  if (!hit) return null;
+  const page = await getJSONAny('https://www.gov.uk/api/content' + hit.path, 25000);
+  const part = (page.details?.parts || []).find((p) => p.slug === 'safety-and-security');
+  if (!part) return null;
+  return {
+    url: 'https://www.gov.uk' + hit.path + '/safety-and-security',
+    updated: page.public_updated_at || page.updated_at || null,
+    blocks: extractCrime(part.body || ''),
+  };
+}
+
+// HTML gövdesinden yalnızca "Crime" başlığı altındaki metni düz metin olarak çıkarır.
+export function extractCrime(html) {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const all = [...doc.body.children];
+  let start = all.findIndex((el) => /^H[23]$/.test(el.tagName) && /crime/i.test(el.textContent));
+  const out = [];
+  if (start >= 0) {
+    const lvl = all[start].tagName;
+    for (let i = start + 1; i < all.length; i++) {
+      const el = all[i];
+      if (el.tagName === lvl || (lvl === 'H3' && el.tagName === 'H2')) break;
+      if (/^H[3-4]$/.test(el.tagName)) out.push({ h: el.textContent.trim() });
+      else if (el.tagName === 'UL' || el.tagName === 'OL') out.push({ li: [...el.querySelectorAll('li')].map((li) => li.textContent.trim()) });
+      else if (el.textContent.trim()) out.push({ p: el.textContent.trim() });
+    }
+  } else {
+    doc.querySelectorAll('p').forEach((p) => { if (/pickpocket|theft|robber|crime|scam/i.test(p.textContent)) out.push({ p: p.textContent.trim() }); });
+  }
+  return out.slice(0, 30);
 }

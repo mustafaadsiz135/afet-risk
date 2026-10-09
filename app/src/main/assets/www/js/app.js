@@ -130,7 +130,7 @@ function onCenter() {
 async function evaluate(place) {
   show('progress');
   $('#progPlace').textContent = place.label;
-  const keys = ['faults', 'quakes', 'terrain', 'climate', 'water'];
+  const keys = ['faults', 'quakes', 'terrain', 'climate', 'water', 'crime'];
   $('#stepList').innerHTML = keys.map((k) => `<li id="st-${k}" class="run">${esc(t().steps[k])}</li>`).join('');
   const mark = (k, ok) => {
     const li = $('#st-' + k);
@@ -140,12 +140,13 @@ async function evaluate(place) {
   };
   const run = (k, fn) => fn().then((v) => { mark(k, true); return v; }, (e) => { console.warn(k, e); mark(k, false); return null; });
   const { lat, lon } = place;
-  const [faults, quakes, elev, daily, water] = await Promise.all([
+  const [faults, quakes, elev, daily, water, crime] = await Promise.all([
     run('faults', () => api.faultsAround(lat, lon)),
     run('quakes', () => api.earthquakes(lat, lon, 150)),
     run('terrain', () => api.elevationGrid(lat, lon)),
     run('climate', () => api.climateHistory(lat, lon)),
     run('water', () => api.waterways(lat, lon)),
+    run('crime', () => loadCrime(place.cc)),
   ]);
   const data = {
     place,
@@ -154,6 +155,7 @@ async function evaluate(place) {
     terrain: elev ? terrainStats(elev) : null,
     climate: daily ? climateStats(daily) : null,
     water: water ? waterStats(lat, lon, water) : null,
+    crime,
     failed: [!quakes && 'quakes', !elev && 'terrain', !daily && 'climate', !water && 'water'].filter(Boolean),
     date: Date.now(),
   };
@@ -174,6 +176,46 @@ async function evaluate(place) {
   state.report = data;
   renderReport(data);
   show('report');
+}
+
+// ---------- Suç (ülke geneli) ----------
+async function loadCrime(cc) {
+  const en = state.countries.find((c) => c[0] === cc)?.[1];
+  const [stats, advice] = await Promise.allSettled([api.crimeIndicator(cc), en ? api.travelAdvice(en) : Promise.resolve(null)]);
+  const out = { stats: stats.status === 'fulfilled' ? stats.value : null, advice: advice.status === 'fulfilled' ? advice.value : null };
+  if (!out.stats && !out.advice) throw new Error('crime data unavailable');
+  return out;
+}
+function crimeLevel(st) {
+  if (!st || !st.world) return 0;
+  const r = st.country.value / st.world.value;
+  return r < 0.5 ? 1 : r < 1 ? 2 : r < 2 ? 3 : r < 4 ? 4 : 5;
+}
+function crimeCard(c) {
+  const L = t();
+  const st = c?.stats, adv = c?.advice;
+  const lv = crimeLevel(st);
+  const statHtml = st ? `
+    ${lv ? `<div class="hz-top" style="margin-top:.6rem"><span class="small muted" style="flex:1">${esc(L.crimeRatio(st.country.value / st.world.value, lang))}</span><span class="badge">${esc(L.lv[lv])}</span></div>` : ''}
+    <ul class="factors">
+      <li><span>${esc(L.crimeHom(st.country.value, st.country.year, lang))}</span></li>
+      ${st.world ? `<li><span>${esc(L.crimeWorld(st.world.value, st.world.year, lang))}</span></li>` : ''}
+    </ul>
+    ${lv ? `<p class="small muted">${esc(L.crimeLvNote)}</p>` : ''}` : `<p class="small muted">${esc(L.crimeFail)}</p>`;
+  const advBody = adv && adv.blocks.length ? adv.blocks.map((b) => b.h ? `<h4>${esc(b.h)}</h4>` : b.li ? `<ul>${b.li.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : `<p>${esc(b.p)}</p>`).join('') : '';
+  const advHtml = advBody ? `
+    <h3>${esc(L.adviceTitle)}</h3>
+    ${L.adviceLang ? `<p class="small muted">${esc(L.adviceLang)}</p>` : ''}
+    <details><summary>${esc(L.adviceShow)}</summary><div class="advice" lang="en">${advBody}</div></details>
+    <p class="small muted">${adv.updated ? `${esc(L.adviceUpdated)}: ${esc(L.when(adv.updated, lang))} · ` : ''}<a href="${esc(adv.url)}" target="_blank" rel="noopener">${esc(L.adviceMore)}</a></p>`
+    : `<p class="small muted">${esc(L.adviceNone)}</p>`;
+  return `<div class="card lv${lv}" style="margin-top:14px">
+    <div class="hz-top"><i class="hz-ic cr"></i><h3>${esc(L.crimeTitle)}</h3></div>
+    <p class="small muted" style="margin:.3rem 0 0">${esc(L.crimeScope)}</p>
+    ${statHtml}
+    ${advHtml}
+    <p class="note">${esc(L.crimeNoLocal)}</p>
+  </div>`;
 }
 
 // ---------- Rapor ----------
@@ -198,6 +240,7 @@ function tipsFor(d) {
   if (lv('fl') >= 3) tips.push(...L.tip.fl);
   if (lv('ls') >= 3) tips.push(...L.tip.ls);
   if (lv('av') >= 3) tips.push(...L.tip.av);
+  tips.push(...L.tip.cr);
   if (!(lv('eq') >= 2 && d.place.cc === 'TR')) tips.push(L.tip.gen);
   return tips;
 }
@@ -260,6 +303,7 @@ function renderReport(d) {
       <div class="actions" style="margin-top:.7rem"><button id="btnOpenMap" class="btn ghost">${esc(L.openMap)}</button></div>
     </div>
     ${quakeHtml}
+    ${crimeCard(d.crime)}
     <div class="card"><h3 style="margin-top:0">${esc(L.tips)}</h3><ul class="tips">${tipsFor(d).map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>
     <div class="actions"><button id="btnShare" class="btn primary">${esc(L.share)}</button><button id="btnNew" class="btn ghost">${esc(L.newSearch)}</button></div>
     <div class="card" style="margin-top:14px"><h3 style="margin-top:0">${esc(L.sources)}</h3>
@@ -332,6 +376,8 @@ function share(d) {
     const sc = d.scores[h];
     lines.push(`• ${L.hz[h]}: ${sc ? `${L.lv[levelOf(sc.score)]} (${sc.score}/100)` : L.noData}`);
   }
+  const st = d.crime?.stats;
+  if (st) lines.push(`• ${L.crimeTitle}: ${L.crimeHom(st.country.value, st.country.year, lang)} — ${L.crimeScope}`);
   lines.push('', ...summaryText(d), '', L.disclaimer);
   const text = lines.join('\n');
   if (window.Android?.share) window.Android.share(text);

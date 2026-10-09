@@ -14,6 +14,10 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
+import kotlin.concurrent.thread
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.webkit.WebViewAssetLoader
@@ -90,6 +94,32 @@ class MainActivity : ComponentActivity() {
     }
 
     inner class Bridge {
+        // CORS desteği olmayan resmi kaynaklar için yerel HTTP GET (yalnızca izinli alan adları)
+        @JavascriptInterface
+        fun httpGet(id: Int, url: String) {
+            thread {
+                var ok = false
+                var body: String
+                try {
+                    val u = URL(url)
+                    require(u.protocol == "https" && u.host in ALLOWED_HOSTS) { "host not allowed" }
+                    val con = (u.openConnection() as HttpURLConnection).apply {
+                        connectTimeout = 15000
+                        readTimeout = 25000
+                        setRequestProperty("User-Agent", "AfetRiskRehberi/1.0 (Android)")
+                        setRequestProperty("Accept", "application/json")
+                    }
+                    body = con.inputStream.bufferedReader().use { it.readText() }
+                    ok = con.responseCode in 200..299
+                    con.disconnect()
+                } catch (e: Exception) {
+                    body = e.message ?: "error"
+                }
+                val js = "window.__nativeHttp && window.__nativeHttp($id, $ok, ${JSONObject.quote(body)})"
+                runOnUiThread { web.evaluateJavascript(js, null) }
+            }
+        }
+
         @JavascriptInterface
         fun share(text: String) {
             runOnUiThread {
@@ -117,5 +147,6 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         private const val HOST = "appassets.androidplatform.net"
+        private val ALLOWED_HOSTS = setOf("www.gov.uk", "api.worldbank.org")
     }
 }
