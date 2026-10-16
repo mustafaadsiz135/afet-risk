@@ -20,6 +20,7 @@ import java.net.URL
 import kotlin.concurrent.thread
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
+import androidx.core.view.WindowCompat
 import androidx.webkit.WebViewAssetLoader
 
 class MainActivity : ComponentActivity() {
@@ -45,7 +46,7 @@ class MainActivity : ComponentActivity() {
             allowContentAccess = false
             cacheMode = WebSettings.LOAD_DEFAULT
             // OpenStreetMap kullanım politikası için uygulamayı tanıtan bir User-Agent
-            userAgentString = "$userAgentString AfetRiskRehberi/1.0 (Android)"
+            userAgentString = "$userAgentString Staywise/1.1 (Android)"
         }
 
         web.addJavascriptInterface(Bridge(), "Android")
@@ -94,6 +95,22 @@ class MainActivity : ComponentActivity() {
     }
 
     inner class Bridge {
+        // Açık / koyu tema seçildiğinde durum ve gezinme çubuklarının rengini uyarlar
+        @JavascriptInterface
+        fun setTheme(dark: Boolean) {
+            runOnUiThread {
+                val bar = if (dark) 0xFF0B1015.toInt() else 0xFFFFFFFF.toInt()
+                val nav = if (dark) 0xFF0B1015.toInt() else 0xFFF3F5F7.toInt()
+                window.statusBarColor = bar
+                window.navigationBarColor = nav
+                web.setBackgroundColor(if (dark) 0xFF0F141A.toInt() else 0xFFF3F5F7.toInt())
+                WindowCompat.getInsetsController(window, window.decorView).apply {
+                    isAppearanceLightStatusBars = !dark
+                    isAppearanceLightNavigationBars = !dark
+                }
+            }
+        }
+
         // CORS desteği olmayan resmi kaynaklar için yerel HTTP GET (yalnızca izinli alan adları)
         @JavascriptInterface
         fun httpGet(id: Int, url: String) {
@@ -106,7 +123,7 @@ class MainActivity : ComponentActivity() {
                     val con = (u.openConnection() as HttpURLConnection).apply {
                         connectTimeout = 15000
                         readTimeout = 25000
-                        setRequestProperty("User-Agent", "AfetRiskRehberi/1.0 (Android)")
+                        setRequestProperty("User-Agent", "Staywise/1.1 (Android)")
                         setRequestProperty("Accept", "application/json, application/xml;q=0.9, */*;q=0.8")
                     }
                     body = con.inputStream.bufferedReader().use { it.readText() }

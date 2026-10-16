@@ -26,11 +26,25 @@ function applyLang() {
   document.querySelectorAll('[data-t]').forEach((el) => { const v = get(t(), el.dataset.t); if (typeof v === 'string') el.textContent = v; });
   document.querySelectorAll('[data-tp]').forEach((el) => { el.placeholder = get(t(), el.dataset.tp); });
   $('#btnLang').textContent = t().lang;
+  applyTheme(currentTheme());
   $('#aboutSources').innerHTML = t().srcList.map((s) => `<li>${esc(s)}</li>`).join('');
   fillCountries(true);
   renderHistory();
   if (state.report && state.view === 'report') renderReport(state.report);
   if (state.view === 'compare') renderCompare();
+}
+
+// ---------- Açık / koyu tema ----------
+function currentTheme() { return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark'; }
+function applyTheme(theme) {
+  if (theme === 'light') document.documentElement.dataset.theme = 'light';
+  else delete document.documentElement.dataset.theme;
+  store.set('theme', theme);
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = theme === 'light' ? '#ffffff' : '#0b1015';
+  const b = $('#btnTheme');
+  if (b) { const lbl = theme === 'light' ? t().themeToDark : t().themeToLight; b.setAttribute('aria-label', lbl); b.title = lbl; }
+  try { window.Android?.setTheme?.(theme === 'dark'); } catch (_) { /* eski sürüm */ }
 }
 
 // ---------- Görünümler ----------
@@ -571,7 +585,7 @@ function drawMap(el, lat, lon, faults, zoom) {
       return `<polyline points="${pts.join(' ')}" fill="none" stroke="#c0392b" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" opacity=".85"/>`;
     }).join('');
     const mx = cx - ox, my = cy - oy;
-    html += `<svg>${lines}<circle cx="${mx}" cy="${my}" r="16" fill="#1a6a7d" opacity=".18"/><circle cx="${mx}" cy="${my}" r="7" fill="#1a6a7d" stroke="#fff" stroke-width="3"/></svg>`;
+    html += `<svg>${lines}<circle cx="${mx}" cy="${my}" r="16" fill="#4CC9F0" opacity=".25"/><circle cx="${mx}" cy="${my}" r="7" fill="#4CC9F0" stroke="#ffffff" stroke-width="3"/></svg>`;
     html += `<div class="zoom"><button data-z="1">+</button><button data-z="-1">−</button></div><div class="attr">© OpenStreetMap</div>`;
     el.innerHTML = html;
     el.querySelectorAll('[data-z]').forEach((b) => b.addEventListener('click', (e) => {
@@ -614,6 +628,7 @@ function share(d) {
 // ---------- Başlat ----------
 async function init() {
   $('#btnLang').onclick = () => { lang = lang === 'tr' ? 'en' : 'tr'; store.set('lang', lang); applyLang(); };
+  $('#btnTheme').onclick = () => applyTheme(currentTheme() === 'dark' ? 'light' : 'dark');
   $('#btnAbout').onclick = () => { $('#about').hidden = false; };
   $('#btnCloseAbout').onclick = () => { $('#about').hidden = true; };
   $('#about').onclick = (e) => { if (e.target.id === 'about') $('#about').hidden = true; };

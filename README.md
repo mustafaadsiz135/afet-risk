@@ -1,4 +1,6 @@
-# Afet Risk Rehberi / Disaster Risk Guide
+# Staywise
+
+*Önceki adı: Afet Risk Rehberi.* Tema: Karbon (koyu) · logo: S rotası.
 
 Yerli ve yabancı turistlerin konaklayacakları otelin ya da bölgenin **deprem, sel/taşkın, heyelan ve çığ** açısından bölgesel tehlike düzeyini puanlayan ve kısa bir rapor sunan Android uygulaması. Türkçe ve İngilizce.
 
@@ -35,6 +37,9 @@ Konum güvenlik puanı = 100 − (0,65 × en yüksek tehlike + 0,35 × ortalama 
 
 Önceki değerlendirmeler cihazda saklanır (en fazla 15), internetsiz de açılabilir ve "Güncelle" ile yenilenebilir. **Karşılaştır** ile en fazla 3 kayıt yan yana görülür: konum güvenlik puanı, deprem, sel, heyelan, çığ, suç, resmi seyahat uyarısı ve ulaşım; her satırda en iyi değer işaretlenir.
 
+## Görünüm
+Karbon (koyu) tema varsayılandır; üst çubuktaki ay / güneş tuşuyla açık temaya geçilir ve seçim cihazda hatırlanır. Logo: “S” biçiminde bir yolculuk rotası (başlangıç ve varış noktalarıyla).
+
 ## Veri kaynakları
 - Aktif faylar: GEM Global Active Faults Database (CC BY-SA 4.0) — uygulamaya gömülü
 - Deprem kayıtları: USGS ANSS ComCat (yedek: EMSC)
@@ -53,6 +58,6 @@ Konum güvenlik puanı = 100 − (0,65 × en yüksek tehlike + 0,35 × ortalama 
 Rapor yalnızca açık bilimsel verilerden hesaplanan **bölgesel doğal tehlike göstergelerini** içerir; hiçbir otel, bina, kurum, şirket veya kişi hakkında değerlendirme ya da yargı içermez. Depremlerin zamanı önceden bilinemez; gösterilen olasılıklar istatistiksel değerlerdir.
 
 ## Derleme
-`main` dalına her gönderimde GitHub Actions APK'yı derler ve **Releases → latest** altına `AfetRiskRehberi.apk` olarak yükler.
+`main` dalına her gönderimde GitHub Actions APK'yı derler ve **Releases → latest** altına `Staywise.apk` olarak yükler.
 
 Gömülü verileri yeniden üretmek için: `python3 tools/build_data.py <gem_active_faults_harmonized.geojson> <country-state-city/src/assets> app/src/main/assets/www/data`

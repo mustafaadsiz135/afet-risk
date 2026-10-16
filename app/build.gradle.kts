@@ -11,8 +11,8 @@ android {
         applicationId = "com.afetrisk.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
     }
 
     buildTypes {
@@ -33,4 +33,5 @@ android {
 dependencies {
     implementation("androidx.activity:activity-ktx:1.9.2")
     implementation("androidx.webkit:webkit:1.11.0")
+    implementation("androidx.core:core-ktx:1.13.1")
 }
