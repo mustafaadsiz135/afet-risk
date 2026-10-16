@@ -28,10 +28,12 @@ Konum güvenlik puanı = 100 − (0,65 × en yüksek tehlike + 0,35 × ortalama 
 | Bölüm | Göstergeler |
 |---|---|
 | Suç ve kişisel güvenlik | Yukarıdaki suç değerlendirmesi (konum çevresi kayıtları veya ülke geneli) · FCDO "Crime" bölümü · öneriler |
+| Resmi seyahat uyarıları | ABD Dışişleri (Level 1–4), Kanada (0–3), Avustralya Smartraveller (4 düzey), Birleşik Krallık FCDO (alert_status), Almanya Dışişleri (uyarı var/yok) → ortak 1–4 ölçek: **olağan önlemler · daha dikkatli olun · gerekmedikçe gitmeyin · seyahat etmeyin**. Ortak düzey = sayısal düzey veren kaynakların ortancası (eşitlikte daha temkinli olan); bölgesel uyarılar ayrıca işaretlenir |
+| Son haberler | GDELT açık haber veritabanı: yerin adı + afet/suç kelimeleri, son 30 gün. Başlıkta konu kelimesi geçen haberler Afet / Suç olarak sınıflanır; yalnızca başlık, kaynak, tarih ve bağlantı gösterilir. **Puanlamaya katılmaz** |
 | Ulaşım ve iletişim | Trafik kazası ölüm oranı (DSÖ) × 1,5 (en fazla 50) + (100 − internet kullanımı %) × 0,35 (en fazla 35) → **0–29 kolay · 30–59 orta · 60+ zor** · trafiğin aktığı yön · FCDO "Transport risks" bölümü |
 | Dil | Resmi diller, İngilizcenin resmi dil olup olmadığı (puanlanmaz) |
 
-Önceki değerlendirmeler cihazda saklanır (en fazla 15), internetsiz de açılabilir ve "Güncelle" ile yenilenebilir. **Karşılaştır** ile en fazla 3 kayıt yan yana görülür: konum güvenlik puanı, deprem, sel, heyelan, çığ, suç ve ulaşım; her satırda en iyi değer işaretlenir.
+Önceki değerlendirmeler cihazda saklanır (en fazla 15), internetsiz de açılabilir ve "Güncelle" ile yenilenebilir. **Karşılaştır** ile en fazla 3 kayıt yan yana görülür: konum güvenlik puanı, deprem, sel, heyelan, çığ, suç, resmi seyahat uyarısı ve ulaşım; her satırda en iyi değer işaretlenir.
 
 ## Veri kaynakları
 - Aktif faylar: GEM Global Active Faults Database (CC BY-SA 4.0) — uygulamaya gömülü
@@ -42,6 +44,8 @@ Konum güvenlik puanı = 100 − (0,65 × en yüksek tehlike + 0,35 × ortalama 
 - Ülke göstergeleri: Dünya Bankası Açık Veri — UNODC, DSÖ, ITU kaynaklı (CC BY 4.0)
 - Resmi diller: mledoze/countries (ODbL)
 - Yerel suç kayıtları: data.police.uk (Open Government Licence), City of Chicago ve DataSF açık veri portalları
+- Resmi seyahat uyarıları: travel.state.gov (RSS), travel.gc.ca açık veri, smartraveller.gov.au, auswaertiges-amt.de açık veri
+- Haberler: GDELT Project (yalnızca başlık ve bağlantı)
 - Resmi seyahat bilgisi: GOV.UK Foreign travel advice (Open Government Licence v3.0)
 - Ülke/il/ilçe listesi: countries-states-cities veri seti (ODbL)
 

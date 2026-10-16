@@ -107,7 +107,7 @@ class MainActivity : ComponentActivity() {
                         connectTimeout = 15000
                         readTimeout = 25000
                         setRequestProperty("User-Agent", "AfetRiskRehberi/1.0 (Android)")
-                        setRequestProperty("Accept", "application/json")
+                        setRequestProperty("Accept", "application/json, application/xml;q=0.9, */*;q=0.8")
                     }
                     body = con.inputStream.bufferedReader().use { it.readText() }
                     ok = con.responseCode in 200..299
@@ -147,6 +147,10 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         private const val HOST = "appassets.androidplatform.net"
-        private val ALLOWED_HOSTS = setOf("www.gov.uk", "api.worldbank.org", "data.police.uk", "data.cityofchicago.org", "data.sfgov.org")
+        private val ALLOWED_HOSTS = setOf(
+            "www.gov.uk", "api.worldbank.org", "data.police.uk", "data.cityofchicago.org", "data.sfgov.org",
+            "travel.state.gov", "data.international.gc.ca", "www.smartraveller.gov.au", "www.auswaertiges-amt.de",
+            "api.gdeltproject.org"
+        )
     }
 }

@@ -42,3 +42,6 @@ for c in co:
     states.sort(key=lambda x:x[1])
     json.dump(states, open(f"{OUT}/places/{cc}.json","w"), separators=(',',':'), ensure_ascii=False)
 print(len(tiles),'fault tiles,',len(countries),'countries')
+
+# Not: data/countryinfo.json (resmi diller ve ülke adı eşleştirme listesi) mledoze/countries (ODbL)
+# verisinden ayrıca üretilmiştir; alanlar: l = diller, c = para birimleri, n = normalize edilmiş ad/takma adlar.

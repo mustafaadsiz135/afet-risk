@@ -38,6 +38,21 @@ async function getJSONAny(url, timeout = 25000) {
   }
 }
 
+async function getTextAny(url, timeout = 25000) {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), timeout);
+  try {
+    const r = await fetch(url, { signal: ctl.signal });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return await r.text();
+  } catch (e) {
+    if (!window.Android?.httpGet) throw e;
+    return nativeGet(url, timeout);
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 async function firstOk(urls, opts) {
   let err;
   for (const u of urls) {
@@ -201,7 +216,7 @@ export async function travelAdvice(countryNameEn) {
   const page = await getJSONAny('https://www.gov.uk/api/content' + hit.path, 25000);
   const parts = {};
   for (const p of page.details?.parts || []) parts[p.slug] = p.body || '';
-  return { base: 'https://www.gov.uk' + hit.path, updated: page.public_updated_at || page.updated_at || null, parts };
+  return { base: 'https://www.gov.uk' + hit.path, updated: page.public_updated_at || page.updated_at || null, parts, alert: page.details?.alert_status || [] };
 }
 
 // HTML gövdesinden bir başlık altındaki metni düz metin blokları olarak çıkarır (HTML olarak gösterilmez).
@@ -313,4 +328,124 @@ export async function localCrime(lat, lon, cc) {
   const src = localCrimeSource(lat, lon, cc);
   if (!src) return null;
   return src === 'police_uk' ? policeUk(lat, lon) : socrata(src, lat, lon);
+}
+
+
+// ---------- Resmi seyahat uyarı düzeyleri (5 hükümet) ----------
+// Ortak ölçek: 1 = olağan önlemler · 2 = daha dikkatli olun · 3 = gerekmedikçe gitmeyin · 4 = seyahat etmeyin.
+// regional = ülkenin bazı bölgeleri için daha yüksek uyarı var. Uygulama metinlere ekleme veya yorum yapmaz.
+const nm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z]/g, '');
+const matches = (name, names) => { const k = nm(name); return !!k && names.includes(k); };
+
+async function advisoryUS(names) {
+  const xml = await getTextAny('https://travel.state.gov/_res/rss/TAsTWs.xml', 25000);
+  const doc = new DOMParser().parseFromString(xml, 'text/xml');
+  for (const it of doc.querySelectorAll('item')) {
+    const title = it.querySelector('title')?.textContent || '';
+    const m = /^(.*?)\s+-\s+Level\s+(\d)/i.exec(title);
+    if (!m || !matches(m[1], names)) continue;
+    const desc = it.querySelector('description')?.textContent || '';
+    return {
+      gov: 'us', level: +m[2], regional: /level\s*4|do not travel/i.test(desc) && +m[2] < 4,
+      date: it.querySelector('pubDate')?.textContent || null, url: it.querySelector('link')?.textContent || 'https://travel.state.gov/',
+    };
+  }
+  return null;
+}
+async function advisoryCA(cc) {
+  const r = await getJSONAny('https://data.international.gc.ca/travel-voyage/index-updated.json', 30000);
+  const e = r?.data?.[cc];
+  if (!e || e['advisory-state'] == null) return null;
+  return {
+    gov: 'ca', level: +e['advisory-state'] + 1, regional: !!+e['has-regional-advisory'],
+    date: e['date-published']?.date || null,
+    url: `https://travel.gc.ca/destinations/${e.eng?.['url-slug'] || ''}`,
+  };
+}
+const AU_LEVELS = [/normal safety precautions/i, /high degree of caution/i, /reconsider your need to travel/i, /do not travel/i];
+async function advisoryAU(names) {
+  const r = await getJSONAny('https://www.smartraveller.gov.au/destinations-export', 30000);
+  const e = (Array.isArray(r) ? r : []).find((x) => matches(x.title, names));
+  if (!e) return null;
+  const lvl = AU_LEVELS.findIndex((re) => re.test(e.field_overall_advice_level || '')) + 1;
+  if (!lvl) return null;
+  const all = String(e.field_advice_levels || '');
+  const regional = AU_LEVELS.slice(lvl).some((re) => re.test(all));
+  return { gov: 'au', level: lvl, regional, date: e.changed || null, url: e.field_url ? new URL(e.field_url, 'https://www.smartraveller.gov.au').href : 'https://www.smartraveller.gov.au/' };
+}
+async function advisoryDE(cc) {
+  const r = await getJSONAny('https://www.auswaertiges-amt.de/opendata/travelwarning', 30000);
+  const res = r?.response || {};
+  const e = Object.values(res).find((x) => x && typeof x === 'object' && x.countryCode === cc);
+  if (!e) return null;
+  // Almanya'da yalnızca uyarı olup olmadığı bildirilir; "uyarı yok" 1. veya 2. düzeye karşılık gelebilir.
+  const level = e.warning ? 4 : e.situationWarning ? 3 : null;
+  return {
+    gov: 'de', level, none: level == null, regional: !!(e.partialWarning || e.situationPartWarning),
+    date: e.lastModified ? new Date(e.lastModified * 1000).toISOString() : null,
+    url: 'https://www.auswaertiges-amt.de/de/service/laender',
+  };
+}
+export function advisoryUKFrom(alert, base, updated) {
+  if (!base) return null;
+  const a = alert || [];
+  const level = a.includes('avoid_all_travel_to_whole_country') ? 4 : a.includes('avoid_all_but_essential_travel_to_whole_country') ? 3 : null;
+  const regional = a.some((x) => /_to_parts$/.test(x));
+  return { gov: 'uk', level, none: level == null, regional, date: updated, url: base };
+}
+export async function advisories(cc, names) {
+  const jobs = [advisoryUS(names), advisoryCA(cc), advisoryAU(names), advisoryDE(cc)];
+  const res = await Promise.allSettled(jobs);
+  return res.map((x) => (x.status === 'fulfilled' ? x.value : null)).filter(Boolean);
+}
+
+// ---------- Son haberler (GDELT 2.0 açık haber veritabanı) ----------
+// Haberler puanlamaya katılmaz; yalnızca başlık, kaynak, tarih ve bağlantı gösterilir.
+// q = GDELT sorgusunda aranan kelimeler; re = başlığı sınıflandırmak için kökler (Türkçe ekleri kapsar).
+export const NEWS_WORDS = {
+  tr: {
+    q: ['deprem', 'depremi', 'sel', 'selde', 'taşkın', 'taştı', 'heyelan', 'çığ', 'sağanak', 'hırsız', 'hırsızlık', 'hırsızlığı', 'gasp', 'yankesici', 'yankesicilik', 'dolandırıcı', 'dolandırıcılık', 'kapkaç', 'soygun'],
+    dis: /(^|[^\p{L}])(deprem|sel(?![\p{L}])|sel(de|e|i|in|den|ler)|taşkın|taştı|heyelan|çığ|sağanak)/iu,
+    cri: /(^|[^\p{L}])(hırsız|gasp|yankesici|dolandırıcı|kapkaç|soygun)/iu,
+  },
+  en: {
+    q: ['earthquake', 'quake', 'flood', 'flooding', 'floods', 'landslide', 'avalanche', 'theft', 'thieves', 'robbery', 'pickpocket', 'pickpocketing', 'scam', 'mugging'],
+    dis: /\b(earthquake|quake|flood|landslide|avalanche|storm)/i,
+    cri: /\b(theft|thie(f|ves)|robber|pickpocket|scam|mugg)/i,
+  },
+};
+function gdeltDate(s) { const m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})/.exec(s || ''); return m ? `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:00Z` : null; }
+async function gdeltQuery(term, lang) {
+  const words = NEWS_WORDS[lang].q.join(' OR ');
+  const q = `"${term.replace(/"/g, '')}" (${words})${lang === 'tr' ? ' sourcelang:turkish' : ''}`;
+  const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(q)}&mode=artlist&format=json&maxrecords=60&timespan=30d&sort=datedesc`;
+  const r = await getJSONAny(url, 30000);
+  return Array.isArray(r?.articles) ? r.articles : [];
+}
+export function classifyNews(articles, lang) {
+  const W = NEWS_WORDS[lang];
+  const loc = lang === 'tr' ? 'tr' : 'en';
+  const seen = new Set(), out = [];
+  for (const a of articles) {
+    const title = (a.title || '').trim();
+    const key = title.toLocaleLowerCase(loc).replace(/\s+/g, ' ');
+    if (!title || seen.has(key)) continue;
+    seen.add(key);
+    const t = title.toLocaleLowerCase(loc);
+    const cat = W.dis.test(t) ? 'dis' : W.cri.test(t) ? 'cri' : null;
+    if (!cat) continue; // başlığında konu kelimesi geçmeyen haberler gösterilmez
+    out.push({ title, url: a.url, domain: a.domain, date: gdeltDate(a.seendate), cat });
+  }
+  return out;
+}
+export async function news(area, stateName, cc) {
+  const lang = cc === 'TR' ? 'tr' : 'en';
+  let items = classifyNews(await gdeltQuery(area, lang), lang);
+  let term = area;
+  if (items.length < 3 && stateName && stateName !== area) {
+    await new Promise((r) => setTimeout(r, 5500)); // GDELT: en fazla 5 saniyede bir istek
+    const more = classifyNews(await gdeltQuery(stateName, lang), lang);
+    if (more.length > items.length) { items = more; term = stateName; }
+  }
+  return { term, lang, days: 30, items: items.slice(0, 30), counts: { dis: items.filter((x) => x.cat === 'dis').length, cri: items.filter((x) => x.cat === 'cri').length } };
 }

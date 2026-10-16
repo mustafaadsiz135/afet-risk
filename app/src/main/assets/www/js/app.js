@@ -102,7 +102,7 @@ function region() {
   const st = state.places[$('#selState').value];
   const city = st && st[4][$('#selCity').value];
   const ctry = countryName(cc, country?.[1]);
-  if (city && city[1] != null) return { cc, lat: city[1], lon: city[2], name: city[0], label: [city[0], st[1], ctry].join(', '), level: 'city' };
+  if (city && city[1] != null) return { cc, lat: city[1], lon: city[2], name: city[0], label: [city[0], st[1], ctry].join(', '), level: 'city', stateName: st[1] };
   if (st && st[2] != null) {
     const same = st[4].find((x) => x[0] === st[1]); // il merkezi şehri varsa onu kullan
     const lat = same ? same[1] : st[2], lon = same ? same[2] : st[3];
@@ -131,7 +131,7 @@ async function onFind() {
     ul.innerHTML = res.map((x, i) => `<li data-i="${i}"><span class="pin">${i + 1}</span><div><b>${esc(x.name)}</b><small>${esc(x.label)}</small></div></li>`).join('');
     ul.querySelectorAll('li[data-i]').forEach((li) => li.addEventListener('click', () => {
       const x = res[+li.dataset.i];
-      evaluate({ name: x.name, label: x.label, lat: x.lat, lon: x.lon, cc: r.cc });
+      evaluate({ name: x.name, label: x.label, lat: x.lat, lon: x.lon, cc: r.cc, area: r.level === 'country' ? null : r.name, stateName: r.stateName || null });
     }));
     box.scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (_) {
@@ -142,7 +142,7 @@ function onCenter() {
   formMsg('');
   const r = region();
   if (r.lat == null || r.level === 'country') { formMsg(t().needRegion); return; }
-  evaluate({ name: r.name, label: r.label, lat: r.lat, lon: r.lon, cc: r.cc });
+  evaluate({ name: r.name, label: r.label, lat: r.lat, lon: r.lon, cc: r.cc, area: r.name, stateName: r.stateName || null });
 }
 
 // ---------- Değerlendirme ----------
@@ -150,7 +150,7 @@ async function evaluate(place) {
   show('progress');
   $('#progPlace').textContent = place.label;
   const hasLocal = !!api.localCrimeSource(place.lat, place.lon, place.cc);
-  const keys = ['faults', 'quakes', 'terrain', 'climate', 'water', 'country', ...(hasLocal ? ['local'] : [])];
+  const keys = ['faults', 'quakes', 'terrain', 'climate', 'water', 'country', 'advice', ...(hasLocal ? ['local'] : []), ...(place.area ? ['news'] : [])];
   $('#stepList').innerHTML = keys.map((k) => `<li id="st-${k}" class="run">${esc(t().steps[k] || t().localStep)}</li>`).join('');
   const mark = (k, ok) => {
     const li = $('#st-' + k);
@@ -160,14 +160,16 @@ async function evaluate(place) {
   };
   const run = (k, fn) => fn().then((v) => { mark(k, true); return v; }, (e) => { console.warn(k, e); mark(k, false); return null; });
   const { lat, lon } = place;
-  const [faults, quakes, elev, daily, water, country, localCrime] = await Promise.all([
+  const [faults, quakes, elev, daily, water, country, advice, localCrime, newsData] = await Promise.all([
     run('faults', () => api.faultsAround(lat, lon)),
     run('quakes', () => api.earthquakes(lat, lon, 150)),
     run('terrain', () => api.elevationGrid(lat, lon)),
     run('climate', () => api.climateHistory(lat, lon)),
     run('water', () => api.waterways(lat, lon)),
     run('country', () => loadCountry(place.cc)),
+    run('advice', () => api.advisories(place.cc, state.info[place.cc]?.n || [])),
     hasLocal ? run('local', () => api.localCrime(place.lat, place.lon, place.cc)) : Promise.resolve(null),
+    place.area ? run('news', () => api.news(place.area, place.stateName, place.cc)) : Promise.resolve(null),
   ]);
   const data = {
     place,
@@ -178,6 +180,8 @@ async function evaluate(place) {
     water: water ? waterStats(lat, lon, water) : null,
     country,
     localCrime,
+    advice: advice || [],
+    news: newsData,
     failed: [!quakes && 'quakes', !elev && 'terrain', !daily && 'climate', !water && 'water'].filter(Boolean),
     date: Date.now(),
   };
@@ -197,7 +201,7 @@ async function evaluate(place) {
   data.safety = overall(data.scores);
   computeGuide(data);
   state.report = data;
-  state.tab = 'risk';
+  state.tab = 'risk'; state.newsFilter = 'all'; state.newsMore = false;
   saveHistory(data);
   renderReport(data);
   show('report');
@@ -215,7 +219,7 @@ async function loadCountry(cc) {
     crime: api.extractSection(P['safety-and-security'], /^\s*crime\s*$/i),
     transport: api.extractSection(P['safety-and-security'], /transport risks/i),
   } : null;
-  if (out.advice) { out.base = out.advice.base; out.updated = out.advice.updated; delete out.advice; }
+  if (out.advice) { out.base = out.advice.base; out.updated = out.advice.updated; out.ukAlert = out.advice.alert; delete out.advice; }
   return out;
 }
 function computeGuide(d) {
@@ -225,7 +229,21 @@ function computeGuide(d) {
     crCountry: scoreCrime(st, !!c?.text?.crime?.blocks.length),
     tr: scoreTransport(st, d.place.cc),
     la: languageInfo(info),
+    adv: combineAdvice(d),
   };
+}
+// Resmi uyarıların birleşimi: sayısal düzeylerin ortancası (eşitlikte daha temkinli olan).
+function combineAdvice(d) {
+  const list = [...(d.advice || [])];
+  const uk = api.advisoryUKFrom(d.country?.ukAlert, d.country?.base, d.country?.updated);
+  if (uk) list.push(uk);
+  const order = ['us', 'ca', 'au', 'uk', 'de'];
+  list.sort((a, b) => order.indexOf(a.gov) - order.indexOf(b.gov));
+  const nums = list.filter((x) => x.level != null).map((x) => x.level).sort((a, b) => a - b);
+  const level = nums.length ? nums[Math.floor(nums.length / 2)] : null;
+  const regional = list.some((x) => x.regional);
+  const agree = level != null ? list.filter((x) => x.level === level).length : 0;
+  return list.length ? { list, level, regional, agree, n: nums.length } : null;
 }
 function blocksHtml(bl) {
   return bl.map((b) => b.h ? `<h4>${esc(b.h)}</h4>` : b.li ? `<ul>${b.li.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : `<p>${esc(b.p)}</p>`).join('');
@@ -269,6 +287,42 @@ function crimeCard(d) {
     { scope: L.crimeScope, noScoreText: L.crimeFail, open: true });
 }
 function titleCase(s) { return String(s).toLowerCase().replace(/(^|[\s/-])\p{L}/gu, (m) => m.toUpperCase()); }
+const ADV_LV = [0, 1, 3, 4, 5]; // ortak düzey → renk düzeyi
+function adviceCard(d) {
+  const L = t(), a = d.guide.adv;
+  if (!a) return `<div class="card hz-card lv0"><div class="hz-top"><i class="hz-ic adv"></i><h3>${esc(L.advTitle)}</h3></div><p class="small muted">${esc(L.advNone)}</p></div>`;
+  const lv = a.level ? ADV_LV[a.level] : 0;
+  const head = `<div class="hz-top"><i class="hz-ic adv"></i><h3>${esc(L.advTitle)}</h3>${a.level ? `<span class="badge">${esc(L.advLv[a.level])}</span>` : ''}</div>`;
+  const bar = a.level ? `<div class="bar four"><i style="left:${(a.level - 0.5) * 25}%"></i></div><div class="bar-meta"><span>${esc(L.advScale(a.level))}</span><span>${esc(L.advAgree(a.agree, a.n))}</span></div>` : '';
+  const rows = a.list.map((x) => `<li class="adv-row lv${x.level ? ADV_LV[x.level] : 0}">
+      <span class="adv-gov">${esc(L.gov[x.gov])}</span>
+      <span class="adv-lv"><span class="cell-chip">${esc(x.level ? L.advLv[x.level] : L.advNoWarn)}</span>${x.regional ? `<small>${esc(L.advRegional)}</small>` : ''}</span>
+      <a href="${esc(x.url)}" target="_blank" rel="noopener" aria-label="${esc(L.gov[x.gov])}">↗</a></li>`).join('');
+  const missing = ['us', 'ca', 'au', 'uk', 'de'].filter((g) => !a.list.some((x) => x.gov === g)).map((g) => L.gov[g]);
+  return `<div class="card hz-card lv${lv}">${head}<p class="small muted" style="margin:.3rem 0 0">${esc(L.advScope)}</p>${bar}
+    <ul class="adv-list">${rows}</ul>
+    ${missing.length ? `<p class="small muted">${esc(L.advMissing(missing.join(', ')))}</p>` : ''}
+    ${a.regional ? `<p class="note">${esc(L.advRegionalNote)}</p>` : ''}
+    <p class="small muted">${esc(L.advNote)}</p></div>`;
+}
+function newsCard(d) {
+  const L = t(), n = d.news;
+  if (!d.place.area) return '';
+  if (!n) return `<div class="card hz-card lv0"><div class="hz-top"><i class="hz-ic news"></i><h3>${esc(L.newsTitle)}</h3></div><p class="small muted">${esc(L.newsFail)}</p></div>`;
+  const f = state.newsFilter || 'all';
+  const items = n.items.filter((x) => f === 'all' || x.cat === f);
+  const shown = state.newsMore ? items : items.slice(0, 8);
+  const list = shown.length ? `<ul class="news-list">${shown.map((x) => `<li><span class="tag ${x.cat}">${esc(L.newsCat[x.cat])}</span>
+      <a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.title)}</a>
+      <small>${esc(x.domain || '')}${x.date ? ' · ' + esc(L.when(x.date, lang)) : ''}</small></li>`).join('')}</ul>` : `<p class="small muted">${esc(n.items.length ? L.newsNoneCat : L.newsNone(n.term))}</p>`;
+  const btn = (k, label) => `<button class="seg ${f === k ? 'on' : ''}" data-nf="${k}">${esc(label)}</button>`;
+  return `<div class="card hz-card lv0"><div class="hz-top"><i class="hz-ic news"></i><h3>${esc(L.newsTitle)}</h3></div>
+    <p class="small muted" style="margin:.3rem 0 .6rem">${esc(L.newsScope(n.term, n.days))}</p>
+    <div class="segs">${btn('all', `${L.newsAll} · ${n.items.length}`)}${btn('dis', `${L.newsCat.dis} · ${n.counts.dis}`)}${btn('cri', `${L.newsCat.cri} · ${n.counts.cri}`)}</div>
+    ${list}
+    ${items.length > 8 ? `<button class="link-btn" id="btnNewsMore">${esc(state.newsMore ? L.newsLess : L.newsMoreBtn(items.length - 8))}</button>` : ''}
+    <p class="note">${esc(L.newsNote)}</p></div>`;
+}
 function trLevel(score) { const k = transportLevel(score); return { lv: [1, 3, 5][k], label: t().trLv[k] }; }
 function guideHtml(d) {
   const L = t(), g = d.guide, x = d.country?.text;
@@ -279,7 +333,7 @@ function guideHtml(d) {
   const laCard = `<div class="card hz-card lv0"><div class="hz-top"><i class="hz-ic la"></i><h3>${esc(L.cat.la.t)}</h3></div>
     <ul class="factors">${names ? `<li><span>${esc(L.langOfficial(names))}</span></li>` : ''}<li><span>${esc(L.langEng(la.englishOfficial))}</span></li></ul>
     <p class="note">${esc(L.langNote)}</p>${tipList(L.tip.la)}</div>`;
-  return `<p class="small muted" style="margin:0 2px 10px">${esc(L.guideIntro)}</p><div class="hz-grid">${cr}${tr}${laCard}</div>`;
+  return `<p class="small muted" style="margin:0 2px 10px">${esc(L.guideIntro)}</p><div class="hz-grid">${adviceCard(d)}${cr}${newsCard(d)}${tr}${laCard}</div>`;
 }
 
 // ---------- Kayıtlı değerlendirmeler ----------
@@ -356,6 +410,7 @@ function renderCompare() {
     { name: L.hz.ls, better: 'low', get: hz('ls') },
     { name: L.hz.av, better: 'low', get: hz('av') },
     { name: L.cat.cr.t, better: 'low', get: (d) => { const sc = d.guide?.cr; return sc && sc.score != null ? { v: sc.score, txt: `${L.lv[levelOf(sc.score)]} · ${sc.score}`, lv: levelOf(sc.score), sub: sc.local ? L.cmpLocal : L.cmpCountry } : null; } },
+    { name: L.advTitle, better: 'low', get: (d) => { const a = d.guide?.adv; return a && a.level ? { v: a.level, txt: L.advLv[a.level], lv: ADV_LV[a.level], sub: a.regional ? L.advRegionalShort : null } : null; } },
     { name: L.cat.tr.t, better: 'low', get: (d) => { const sc = d.guide?.tr; if (!sc || sc.score == null) return null; const x = trLevel(sc.score); return { v: sc.score, txt: x.label, lv: x.lv }; } },
   ];
   const head = items.map((d) => `<th><b>${esc(d.place.name)}</b><small>${esc(d.place.label)}</small></th>`).join('');
@@ -476,6 +531,9 @@ function renderReport(d) {
     $('#btnOpenMap').onclick = () => openMap(d.place);
   }
   document.querySelectorAll('.tabs [data-tab]').forEach((b) => { b.onclick = () => { state.tab = b.dataset.tab; renderReport(d); }; });
+  const keepScroll = (fn) => { const y = window.scrollY; fn(); renderReport(d); window.scrollTo(0, y); };
+  document.querySelectorAll('[data-nf]').forEach((b) => { b.onclick = () => keepScroll(() => { state.newsFilter = b.dataset.nf; state.newsMore = false; }); });
+  if ($('#btnNewsMore')) $('#btnNewsMore').onclick = () => keepScroll(() => { state.newsMore = !state.newsMore; });
   if ($('#btnRefresh')) $('#btnRefresh').onclick = () => evaluate(d.place);
   $('#btnShare').onclick = () => share(d);
   $('#btnNew').onclick = () => show('home');
@@ -544,6 +602,7 @@ function share(d) {
   const g = d.guide || {};
   if (g.cr && g.cr.score != null) lines.push(`• ${L.cat.cr.t}: ${L.lv[levelOf(g.cr.score)]} (${g.cr.score}/100)`);
   if (g.tr && g.tr.score != null) lines.push(`• ${L.cat.tr.t}: ${trLevel(g.tr.score).label}`);
+  if (g.adv && g.adv.level) lines.push(`• ${L.advTitle}: ${L.advLv[g.adv.level]} (${L.advAgree(g.adv.agree, g.adv.n)})`);
   if (g.cr || g.tr) lines.push(`  (${L.guideIntro})`);
   lines.push('', ...summaryText(d), '', L.disclaimer);
   const text = lines.join('\n');
