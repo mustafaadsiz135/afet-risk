@@ -18,6 +18,8 @@ export const T = {
   tr: {
     appName: 'Staywise',
     themeToLight: 'Açık temaya geç', themeToDark: 'Koyu temaya geç',
+    keyNumbers: 'Öne çıkan sayılar', moreInfo: 'Açıklama',
+    st: { fault: 'en yakın aktif fay', quake: 'en etkili kayıtlı deprem', prob: '50 yılda M6+ (100 km)', water: 'akarsu / göle uzaklık', slope: 'eğim · yükseklik', rain: 'en yüksek günlük yağış', snow: 'yıllık kar', yr: 'yıl' },
     tagline: 'Kalacağın yeri akıllıca seç: afet, suç ve seyahat riskleri tek raporda',
     where: 'Nereye gidiyorsunuz?',
     country: 'Ülke', state: 'İl / Eyalet', city: 'İlçe / Şehir',
@@ -57,7 +59,7 @@ export const T = {
     advScale: (n) => `Ortak düzey ${n}/4`,
     advAgree: (a, n) => `Düzey veren ${n} kaynağın ${a} tanesi bu düzeyde`,
     advNoWarn: 'Ülke geneli uyarı yok',
-    advRegional: 'bazı bölgeler için daha yüksek uyarı',
+    advRegional: 'bölgesel uyarı var',
     advRegionalShort: 'bölgesel uyarı var',
     advRegionalNote: 'Kaynaklardan en az biri bu ülkenin bazı bölgeleri için daha yüksek düzeyde uyarı yayımlıyor. Gideceğiniz bölgenin bunlar arasında olup olmadığını bağlantılardan kontrol edin.',
     advMissing: (x) => `Ulaşılamayan kaynak: ${x}`,
@@ -127,7 +129,7 @@ export const T = {
     about: 'Uygulama hakkında',
     aboutText: 'Staywise; yerli ve yabancı turistlerin konaklayacakları yerin deprem, sel/taşkın, heyelan ve çığ açısından bölgesel tehlike düzeyini anlaşılır bir puan ve kısa bir raporla görmesini sağlar. Puanlar; aktif fay hatlarına uzaklık, geçmiş deprem kayıtları, arazi eğimi, yükseklik, akarsu ve kıyıya yakınlık ile 20 yıllık yağış ve kar verilerinden hesaplanır. Seyahat rehberi bölümünde 5 hükümetin resmi seyahat uyarıları, suç (mümkün olduğunda konum çevresindeki resmi kayıtlarla), son 30 günün afet ve suç haberleri, ulaşım ve iletişim (kolay / orta / zor) ve dil bilgileri sunulur. Değerlendirmeleriniz cihazınızda kaydedilir ve en fazla üç bölge yan yana karşılaştırılabilir.',
     method: 'Puanlama yöntemi',
-    methodText: 'Her tehlike 0–100 arası puanlanır ve 5 düzeye ayrılır (0–19 çok düşük, 20–39 düşük, 40–59 orta, 60–79 yüksek, 80–100 çok yüksek). Konum güvenlik puanı = 100 − (0,65 × en yüksek tehlike + 0,35 × ortalama tehlike). Her kriterin puana katkısı raporda ayrıca gösterilir. Seyahat rehberindeki suç ve ulaşım puanları konum güvenlik puanına katılmaz. Suçta oran (konum çevresi veya ülke) 1,5 kat ve üzerindeyse düzey “yüksek”tir. Ulaşım: 0–29 kolay, 30–59 orta, 60+ zor.',
+    methodText: 'Her tehlike 0–100 arası puanlanır ve 5 düzeye ayrılır (0–19 çok düşük, 20–39 düşük, 40–59 orta, 60–79 yüksek, 80–100 çok yüksek). Konum güvenlik puanı = 100 − (0,55 × en yüksek tehlike + 0,20 × ikinci en yüksek + 0,25 × ortalama). Her kriterin puana katkısı raporda ayrıca gösterilir. Seyahat rehberindeki suç ve ulaşım puanları konum güvenlik puanına katılmaz. Suçta oran (konum çevresi veya ülke) 1,5 kat ve üzerindeyse düzey “yüksek”tir. Ulaşım: 0–29 kolay, 30–59 orta, 60+ zor.',
     version: 'Sürüm',
     close: 'Kapat', back: 'Geri',
     lang: 'EN',
@@ -136,8 +138,8 @@ export const T = {
     f: {
       'eq.fault': (v, l) => v.d == null ? 'Yakında haritalanmış aktif fay yok' :
         `En yakın aktif fay: ${km(v.d, l)}${v.name ? ` (${v.name})` : ''}${v.type ? ` — ${slipName(v.type, l)}` : ''}${v.rate != null ? `, kayma hızı ≈ ${n1(v.rate, l)} mm/yıl` : ''}`,
-      'eq.maxmag': (v, l) => v.m == null ? '150 km içinde M4,5+ kayıt yok' : `150 km içindeki en büyük kayıtlı deprem: M${n1(v.m, l)}`,
-      'eq.count5': (v) => `100 km içinde 1900’den bu yana M5+ deprem sayısı: ${v.n}`,
+      'eq.maxmag': (v, l) => v.m == null ? '150 km içinde M4,5+ kayıt yok' : `En etkili kayıtlı deprem: M${n1(v.m, l)}, ${km(v.d, l)} uzakta (konuma etkisi ≈ M${n1(v.eff, l)})`,
+      'eq.count5': (v) => `100 km içinde 1900’den bu yana M5+ deprem (artçılar hariç): ${v.n}`,
       'eq.prob': (v, l) => `100 km içinde 50 yılda M6+ deprem olasılığı (istatistiksel): ${pct(v.p, l)}`,
       'fl.river': (v, l) => v.d == null ? '1,5 km içinde haritalanmış akarsu / göl yok' :
         `En yakın ${({ river: 'nehir', canal: 'kanal', stream: 'dere', lake: 'göl', reservoir: 'baraj gölü' })[v.kind] || 'su kütlesi'}: ${m(v.d, l)}${v.name ? ` (${v.name})` : ''}`,
@@ -218,6 +220,8 @@ export const T = {
   en: {
     appName: 'Staywise',
     themeToLight: 'Switch to light theme', themeToDark: 'Switch to dark theme',
+    keyNumbers: 'Key numbers', moreInfo: 'Details',
+    st: { fault: 'nearest active fault', quake: 'strongest recorded quake', prob: 'M6+ in 50 yrs (100 km)', water: 'distance to river / lake', slope: 'slope · elevation', rain: 'highest daily rainfall', snow: 'annual snowfall', yr: 'yr' },
     tagline: 'Stay smart: disaster, crime and travel risks in one report',
     where: 'Where are you going?',
     country: 'Country', state: 'Province / State', city: 'District / City',
@@ -257,7 +261,7 @@ export const T = {
     advScale: (n) => `Combined level ${n}/4`,
     advAgree: (a, n) => `${a} of ${n} sources giving a level agree`,
     advNoWarn: 'No country-wide warning',
-    advRegional: 'higher warning for some regions',
+    advRegional: 'regional warning',
     advRegionalShort: 'regional warning',
     advRegionalNote: 'At least one source issues a higher warning for some regions of this country. Check the links to see whether your destination is among them.',
     advMissing: (x) => `Unreachable source: ${x}`,
@@ -325,7 +329,7 @@ export const T = {
     about: 'About the app',
     aboutText: 'Staywise helps domestic and international travellers see the regional hazard level of where they will stay — earthquake, flood, landslide and avalanche — as a clear score and a short report. Scores use distance to active faults, past earthquake records, terrain slope, elevation, proximity to rivers and coast, and 20 years of rain and snow data. The travel guide section covers official travel advisories from 5 governments, crime (from official records around the location where available), disaster and crime news from the last 30 days, transport and connectivity (easy / moderate / hard) and language. Your assessments are saved on your device and up to three areas can be compared side by side.',
     method: 'Scoring method',
-    methodText: 'Each hazard is scored 0–100 and grouped into 5 levels (0–19 very low, 20–39 low, 40–59 moderate, 60–79 high, 80–100 very high). Location safety score = 100 − (0.65 × highest hazard + 0.35 × mean hazard). The contribution of every criterion is shown in the report. Crime and transport scores in the travel guide are not included in the location safety score. For crime, a ratio (local or country) of 1.5× or more is “high”. Transport: 0–29 easy, 30–59 moderate, 60+ hard.',
+    methodText: 'Each hazard is scored 0–100 and grouped into 5 levels (0–19 very low, 20–39 low, 40–59 moderate, 60–79 high, 80–100 very high). Location safety score = 100 − (0.55 × highest hazard + 0.20 × second highest + 0.25 × mean). The contribution of every criterion is shown in the report. Crime and transport scores in the travel guide are not included in the location safety score. For crime, a ratio (local or country) of 1.5× or more is “high”. Transport: 0–29 easy, 30–59 moderate, 60+ hard.',
     version: 'Version',
     close: 'Close', back: 'Back',
     lang: 'TR',
@@ -334,8 +338,8 @@ export const T = {
     f: {
       'eq.fault': (v, l) => v.d == null ? 'No mapped active fault nearby' :
         `Nearest active fault: ${km(v.d, l)}${v.name ? ` (${v.name})` : ''}${v.type ? ` — ${slipName(v.type, l)}` : ''}${v.rate != null ? `, slip rate ≈ ${n1(v.rate, l)} mm/yr` : ''}`,
-      'eq.maxmag': (v, l) => v.m == null ? 'No M4.5+ records within 150 km' : `Largest recorded earthquake within 150 km: M${n1(v.m, l)}`,
-      'eq.count5': (v) => `M5+ earthquakes within 100 km since 1900: ${v.n}`,
+      'eq.maxmag': (v, l) => v.m == null ? 'No M4.5+ records within 150 km' : `Most impactful recorded quake: M${n1(v.m, l)}, ${km(v.d, l)} away (effect at site ≈ M${n1(v.eff, l)})`,
+      'eq.count5': (v) => `M5+ earthquakes within 100 km since 1900 (aftershocks excluded): ${v.n}`,
       'eq.prob': (v, l) => `Statistical probability of M6+ within 100 km in 50 years: ${pct(v.p, l)}`,
       'fl.river': (v, l) => v.d == null ? 'No mapped river / lake within 1.5 km' :
         `Nearest ${({ river: 'river', canal: 'canal', stream: 'stream', lake: 'lake', reservoir: 'reservoir' })[v.kind] || 'water body'}: ${m(v.d, l)}${v.name ? ` (${v.name})` : ''}`,

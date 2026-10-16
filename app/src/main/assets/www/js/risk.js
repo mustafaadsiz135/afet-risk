@@ -106,10 +106,25 @@ export function climateStats(daily) {
 }
 
 // ---------- Deprem ----------
+// Artçı ve öncü sarsıntıları ayıklar: daha büyük bir depremin 50 km ve 1 yıl yakınındaki
+// küçük depremler ayrı olay sayılmaz (basit kümeleme). Böylece tek bir büyük deprem dizisi
+// sıklığı ve olasılığı şişirmez.
+export function decluster(events) {
+  const kept = [];
+  for (const e of [...events].sort((a, b) => b.mag - a.mag)) {
+    const dup = kept.some((k) => Math.abs(k.time - e.time) < 365 * 864e5 && haversineKm(k.lat, k.lon, e.lat, e.lon) < 50);
+    if (!dup) kept.push(e);
+  }
+  return kept;
+}
+// Uzaklıkla azalan etki: 20 km'den sonra her 10 kat uzaklıkta 1,5 büyüklük birimi düşer.
+export function effectiveMag(e) { return e.mag - 1.5 * Math.log10(Math.max(e.distKm, 20) / 20); }
+
 export function quakeStats(events, nowMs = Date.now()) {
   // events: [{mag, time(ms), lat, lon, depth, place, distKm}]
   const yrs = (fromYear) => (nowMs - Date.UTC(fromYear, 0, 1)) / (365.25 * 864e5);
-  const e100 = events.filter((e) => e.distKm <= 100);
+  const main = decluster(events);
+  const e100 = main.filter((e) => e.distKm <= 100);
   const n45modern = e100.filter((e) => e.mag >= 4.5 && e.time >= Date.UTC(1973, 0, 1)).length;
   const n6hist = e100.filter((e) => e.mag >= 6).length;
   const n5 = e100.filter((e) => e.mag >= 5).length;
@@ -120,9 +135,11 @@ export function quakeStats(events, nowMs = Date.now()) {
   const p = (lam, y) => 1 - Math.exp(-lam * y);
   const sorted = [...events].sort((a, b) => b.mag - a.mag);
   const maxMag = sorted.length ? sorted[0].mag : null;
+  let felt = null;
+  for (const e of events) { const m = effectiveMag(e); if (!felt || m > felt.m) felt = { m, mag: e.mag, d: e.distKm }; }
   const max50 = events.filter((e) => e.distKm <= 50).reduce((m, e) => Math.max(m, e.mag), 0) || null;
   return {
-    count: events.length, count100: e100.length, n5, n6: n6hist, n45modern, maxMag, max50,
+    count: events.length, count100: e100.length, n5, n6: n6hist, n45modern, maxMag, max50, felt,
     strongest: sorted.slice(0, 6),
     lastSignificant: [...e100].filter((e) => e.mag >= 5).sort((a, b) => b.time - a.time)[0] || null,
     p6_50y: p(lam6, 50), p6_10y: p(lam6, 10), p7_50y: p(lam7, 50),
@@ -157,23 +174,24 @@ export function scoreEarthquake({ fault, quakes }) {
   if (fault) {
     inputs++;
     const d = fault.distKm;
-    let pts = d == null ? 0 : step(d, [[2, 40], [5, 35], [10, 28], [20, 20], [50, 12], [100, 5], [Infinity, 0]]);
+    let pts = d == null ? 0 : step(d, [[2, 40], [5, 36], [10, 32], [20, 27], [35, 18], [60, 10], [100, 4], [Infinity, 0]]);
     const r = fault.slipRate;
-    const mult = r == null ? 0.85 : r >= 5 ? 1 : r >= 1 ? 0.85 : 0.7;
+    // Yavaş kayan faylar büyük depremi çok daha seyrek üretir.
+    const mult = r == null ? 0.7 : r >= 5 ? 1 : r >= 1 ? 0.8 : r >= 0.2 ? 0.6 : 0.45;
     pts = Math.round(pts * mult);
     s += pts;
     factors.push({ k: 'eq.fault', v: { d, name: fault.name, rate: r, type: fault.slipType }, pts });
   }
   if (quakes) {
     inputs++;
-    const mm = quakes.maxMag ?? 0;
-    const hist = step(mm, [[4.5, 0], [5, 4], [6, 8], [6.5, 15], [7, 20], [Infinity, 25]]);
+    const fm = quakes.felt ? quakes.felt.m : 0;
+    const hist = step(fm, [[5, 0], [5.5, 4], [6, 8], [6.5, 13], [7, 18], [Infinity, 24]]);
     s += hist;
-    factors.push({ k: 'eq.maxmag', v: { m: quakes.maxMag }, pts: hist });
-    const freq = Math.min(15, quakes.n5);
+    factors.push({ k: 'eq.maxmag', v: { m: quakes.felt?.mag ?? null, d: quakes.felt?.d ?? null, eff: quakes.felt?.m ?? null }, pts: hist });
+    const freq = Math.min(12, quakes.n5);
     s += freq;
     factors.push({ k: 'eq.count5', v: { n: quakes.n5 }, pts: freq });
-    const prob = Math.round(20 * quakes.p6_50y);
+    const prob = Math.round(16 * quakes.p6_50y);
     s += prob;
     factors.push({ k: 'eq.prob', v: { p: quakes.p6_50y }, pts: prob });
   }
@@ -184,12 +202,17 @@ export function scoreEarthquake({ fault, quakes }) {
 export function scoreFlood({ terrain, water, climate }) {
   const factors = [];
   let s = 0, inputs = 0;
+  const near = water && water.riverDistM != null ? water.riverDistM : Infinity;
   if (water) {
     inputs++;
     const d = water.riverDistM;
-    const pts = d == null ? 0 : step(d, [[100, 35], [300, 25], [700, 15], [1500, 6], [Infinity, 0]]);
+    const base = d == null ? 0 : step(d, [[100, 30], [300, 22], [700, 12], [1500, 5], [Infinity, 0]]);
+    // Nehir tam etki; kanal ve göl/baraj gölü daha yavaş yükselir; küçük dere yalnızca çok yakınsa sayılır.
+    const k = water.riverKind;
+    const mult = k === 'river' ? 1 : k === 'stream' ? 0.5 : 0.7;
+    const pts = Math.round(base * mult);
     s += pts;
-    factors.push({ k: 'fl.river', v: { d, name: water.riverName, kind: water.riverKind }, pts });
+    factors.push({ k: 'fl.river', v: { d, name: water.riverName, kind: k }, pts });
     if (water.coastDistM != null && water.coastDistM < 1000 && terrain && terrain.elevation < 6) {
       s += 15;
       factors.push({ k: 'fl.coast', v: { d: water.coastDistM, e: terrain.elevation }, pts: 15 });
@@ -198,16 +221,17 @@ export function scoreFlood({ terrain, water, climate }) {
   if (terrain) {
     inputs++;
     const re = terrain.relElevation;
-    const pts = step(re, [[-15, 25], [-5, 15], [5, 8], [Infinity, 0]]);
+    let pts = step(re, [[-15, 18], [-5, 10], [5, 4], [Infinity, 0]]);
+    if (near > 1500) pts = Math.round(pts / 2); // yakında akarsu yoksa çukurda olmak daha az etkilidir
     s += pts;
     factors.push({ k: 'fl.relelev', v: { re }, pts });
-    const flat = terrain.siteSlope < 2 ? 8 : 0;
+    const flat = terrain.siteSlope < 2 && near <= 700 ? 6 : 0;
     s += flat;
     factors.push({ k: 'fl.flat', v: { sl: terrain.siteSlope }, pts: flat });
   }
   if (climate) {
     inputs++;
-    const pts = step(climate.maxDailyPrecip, [[50, 0], [70, 5], [100, 10], [150, 15], [Infinity, 20]]);
+    const pts = step(climate.maxDailyPrecip, [[50, 0], [70, 4], [100, 8], [150, 12], [Infinity, 15]]);
     s += pts;
     factors.push({ k: 'fl.rain', v: { mx: climate.maxDailyPrecip, y: climate.years, hd: climate.heavyDaysPerYear }, pts });
   }
@@ -220,25 +244,26 @@ export function scoreLandslide({ terrain, climate, eqScore }) {
   if (!terrain) return null;
   let s = 0;
   const sl = terrain.siteSlope;
-  const pSlope = step(sl, [[5, 2], [8, 6], [15, 10], [25, 22], [35, 35], [Infinity, 45]]);
+  const pSlope = step(sl, [[5, 0], [8, 4], [15, 9], [25, 20], [35, 32], [Infinity, 42]]);
   s += pSlope;
   factors.push({ k: 'ls.slope', v: { sl, mx: terrain.maxSlope }, pts: pSlope });
-  const pRelief = step(terrain.areaRelief, [[50, 0], [150, 4], [400, 8], [Infinity, 12]]);
+  const pRelief = step(terrain.areaRelief, [[50, 0], [150, 3], [400, 6], [Infinity, 10]]);
   s += pRelief;
   factors.push({ k: 'ls.relief', v: { r: terrain.areaRelief }, pts: pRelief });
   if (climate) {
-    const pr = step(climate.annualPrecip, [[600, 0], [1000, 5], [1500, 10], [Infinity, 15]]) +
-      (climate.maxDailyPrecip >= 100 ? 8 : 0);
+    const pr = step(climate.annualPrecip, [[600, 0], [1000, 4], [1500, 8], [Infinity, 12]]) +
+      (climate.maxDailyPrecip >= 100 ? 6 : 0);
     s += pr;
     factors.push({ k: 'ls.rain', v: { a: climate.annualPrecip, mx: climate.maxDailyPrecip }, pts: pr });
   }
   if (eqScore != null) {
-    const pe = eqScore >= 60 ? 10 : eqScore >= 40 ? 5 : 0;
+    // Deprem kaynaklı heyelan yalnızca eğimli arazide anlamlıdır.
+    const pe = sl < 10 ? 0 : eqScore >= 60 ? 8 : eqScore >= 40 ? 4 : 0;
     s += pe;
     factors.push({ k: 'ls.seismic', v: { e: eqScore }, pts: pe });
   }
   // Düz alanlarda heyelan olasılığı çok düşüktür; komşu yamaçlardan gelen etkiyi küçük tutar.
-  if (sl < 5 && terrain.maxSlope < 15) s = Math.min(s, 15);
+  if (sl < 5 && terrain.maxSlope < 15) s = Math.min(s, 10);
   return { score: clamp(Math.round(s)), factors, confidence: climate ? 'high' : 'medium' };
 }
 
@@ -259,27 +284,53 @@ export function scoreAvalanche({ terrain, climate }) {
   return { score: clamp(Math.round(s)), factors, confidence: climate ? 'high' : 'low' };
 }
 
+// Konum güvenlik puanı: en yüksek tehlike belirleyicidir, ikinci tehlike ve genel ortalama ek etki yapar.
 export function overall(scores) {
-  const v = Object.values(scores).filter((x) => x && x.score != null).map((x) => x.score);
+  const v = Object.values(scores).filter((x) => x && x.score != null).map((x) => x.score).sort((a, b) => b - a);
   if (!v.length) return null;
-  const mx = Math.max(...v), mean = v.reduce((a, b) => a + b, 0) / v.length;
-  const risk = 0.65 * mx + 0.35 * mean;
+  const mx = v[0], second = v[1] ?? 0, mean = v.reduce((a, b) => a + b, 0) / v.length;
+  const risk = 0.55 * mx + 0.2 * second + 0.25 * mean;
   return clamp(Math.round(100 - risk));
 }
 
 // Overpass yanıtından en yakın akarsu / su kütlesi ve kıyı çizgisi mesafesi (m).
+// Kapalı alanın yaklaşık yüzölçümü (m²), yerel düzlem yaklaşımıyla.
+function areaM2(geom) {
+  if (!geom || geom.length < 3) return 0;
+  const lat0 = geom[0].lat, kx = 111320 * Math.cos(toRad(lat0)), ky = 110574;
+  let a = 0;
+  for (let i = 0; i < geom.length; i++) {
+    const p = geom[i], q = geom[(i + 1) % geom.length];
+    a += (p.lon * kx) * (q.lat * ky) - (q.lon * kx) * (p.lat * ky);
+  }
+  return Math.abs(a) / 2;
+}
+const BIG_WATER = new Set(['lake', 'reservoir', 'river', 'oxbow', 'lagoon', 'canal']);
 export function waterStats(lat, lon, elements) {
   if (!elements) return null;
   let river = null, coast = null;
   for (const el of elements) {
-    if (!el.geometry || !el.geometry.length) continue;
-    const flat = [];
-    for (const g of el.geometry) flat.push(g.lon, g.lat);
-    const d = distToPolylineKm(lat, lon, flat) * 1000;
+    // Büyük göller çoğu zaman çok parçalı "relation" olarak kayıtlıdır: parçaların geometrisi birleştirilir.
+    const geoms = el.geometry ? [el.geometry] : (el.members || []).map((m) => m.geometry).filter(Boolean);
+    if (!geoms.length) continue;
+    let d = Infinity;
+    for (const gm of geoms) {
+      const flat = [];
+      for (const g of gm) flat.push(g.lon, g.lat);
+      d = Math.min(d, distToPolylineKm(lat, lon, flat) * 1000);
+    }
     const t = el.tags || {};
     if (t.natural === 'coastline') { if (!coast || d < coast.d) coast = { d }; continue; }
-    const kind = t.waterway || (t.natural === 'water' ? (t.water || 'water') : 'water');
-    if (kind === 'stream' && d > 400) continue; // küçük dereler yalnızca çok yakınsa sayılır
+    let kind;
+    if (t.waterway) {
+      kind = t.waterway;
+      if (kind === 'stream' && d > 150) continue; // küçük dereler yalnızca çok yakınsa sayılır
+    } else if (t.natural === 'water') {
+      // Havuz, gölet, süs havuzu gibi küçük su alanları taşkın kaynağı sayılmaz (5 hektardan küçük).
+      const big = BIG_WATER.has(t.water) || (el.type === 'relation' ? !t.water : areaM2(el.geometry) >= 50000);
+      if (!big || ['pond', 'basin', 'reflecting_pool', 'wastewater', 'fountain'].includes(t.water)) continue;
+      kind = t.water === 'river' ? 'river' : t.water === 'reservoir' ? 'reservoir' : 'lake';
+    } else continue;
     if (!river || d < river.d) river = { d, name: t.name || null, kind };
   }
   return { riverDistM: river ? Math.round(river.d) : null, riverName: river?.name ?? null, riverKind: river?.kind ?? null, coastDistM: coast ? Math.round(coast.d) : null };

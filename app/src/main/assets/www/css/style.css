@@ -244,3 +244,15 @@ select { color-scheme: dark; }
 .tag { display: inline-block; font-size: .68rem; font-weight: 800; letter-spacing: .3px; padding: .05rem .4rem; border-radius: 5px; margin-right: .35rem; vertical-align: 1px; text-transform: uppercase; }
 .tag.dis { background: color-mix(in srgb, var(--l4) 22%, transparent); color: var(--l4); }
 .tag.cri { background: color-mix(in srgb, var(--brand-2) 18%, transparent); color: var(--brand-2); }
+
+.stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.stat { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; min-width: 0; }
+.stat b { font-size: 1.35rem; font-weight: 800; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.stat span { font-size: .74rem; color: var(--muted); }
+.stat small { font-size: .72rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+details.info { margin-top: .5rem; }
+details.info summary { font-size: .78rem; font-weight: 600; color: var(--muted); }
+details.info summary::after { content: ""; }
+details.info p { font-size: .8rem; color: var(--muted); margin: .35rem 0 0; }
+details.fold > summary { font-weight: 700; font-size: .95rem; color: var(--ink); }
+details.fold.card > summary { margin: 0; }

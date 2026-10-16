@@ -12,9 +12,9 @@ Yerli ve yabancı turistlerin konaklayacakları otelin ya da bölgenin **deprem,
 ## Puanlama kriterleri
 | Tehlike | Kriterler |
 |---|---|
-| Deprem | En yakın aktif faya uzaklık ve fayın kayma hızı · 150 km içindeki en büyük kayıtlı deprem · 1900'den beri 100 km içindeki M5+ deprem sayısı · 50 yılda M6+ deprem olasılığı (Gutenberg–Richter, istatistiksel) |
-| Sel / taşkın | Nehir/dere/göle uzaklık · çevresine göre alçakta olma (çukur/vadi tabanı) · düzlük · kıyıya yakın ve alçak olma · 20 yılın en yüksek günlük yağışı |
-| Heyelan | Konumdaki eğim · 2 km'lik alandaki yükseklik farkı · yıllık ve aşırı yağış · deprem tehlikesi |
+| Deprem | En yakın aktif faya uzaklık × kayma hızı çarpanı (≥5 mm/yıl 1,0 · 1–5: 0,8 · 0,2–1: 0,6 · <0,2: 0,45) · en etkili kayıtlı deprem (uzaklıkla azaltılmış büyüklük: M − 1,5·log10(uzaklık/20 km)) · 1900'den beri 100 km içindeki M5+ deprem sayısı (artçılar ayıklanmış) · 50 yılda M6+ olasılığı |
+| Sel / taşkın | Nehir (tam), kanal / göl / baraj gölü (×0,7), 150 m içindeki dere (×0,5) uzaklığı; 5 hektardan küçük gölet ve havuzlar sayılmaz · çevresine göre alçakta olma (yakında akarsu yoksa yarım) · düzlük (yalnızca su 700 m içindeyse) · kıyıya yakın ve alçak olma · 20 yılın en yüksek günlük yağışı |
+| Heyelan | Konumdaki eğim · 2 km'lik alandaki yükseklik farkı · yıllık ve aşırı yağış · deprem tehlikesi (yalnızca eğim ≥ 10° ise) |
 | Çığ | Yıllık kar yağışı · 28°–50° eğimli alan oranı · yükseklik |
 
 ### Suç ve kişisel güvenlik (ülke geneli, puanlı)
@@ -24,7 +24,7 @@ Yerli ve yabancı turistlerin konaklayacakları otelin ya da bölgenin **deprem,
 - Bu tür verinin olmadığı yerlerde (Türkiye dahil) ülke geneli gösterge kullanılır. Suç göstergesi konum güvenlik puanına katılmaz.
 
 Her tehlike 0–100 puanlanır: 0–19 çok düşük, 20–39 düşük, 40–59 orta, 60–79 yüksek, 80–100 çok yüksek.
-Konum güvenlik puanı = 100 − (0,65 × en yüksek tehlike + 0,35 × ortalama tehlike).
+Konum güvenlik puanı = 100 − (0,55 × en yüksek tehlike + 0,20 × ikinci en yüksek + 0,25 × ortalama).
 
 ### Seyahat rehberi
 | Bölüm | Göstergeler |

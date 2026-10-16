@@ -267,8 +267,7 @@ function officialHtml(d, sections, title) {
   const bl = sections.flatMap((x) => x?.blocks || []);
   if (!bl.length) return c?.base ? '' : `<p class="small muted">${esc(L.adviceNone)}</p>`;
   return `<h3>${esc(title || L.officialTitle)}</h3>
-    ${L.adviceLang ? `<p class="small muted">${esc(L.adviceLang)}</p>` : ''}
-    <details><summary>${esc(L.adviceShow)}</summary><div class="advice" lang="en">${blocksHtml(bl)}</div></details>
+    <details><summary>${esc(L.adviceShow)} (EN)</summary><div class="advice" lang="en">${blocksHtml(bl)}</div></details>
     <p class="small muted">${c.updated ? `${esc(L.adviceUpdated)}: ${esc(L.when(c.updated, lang))} · ` : ''}<a href="${esc(c.base)}" target="_blank" rel="noopener">${esc(L.adviceMore)}</a></p>`;
 }
 function scoreCard(key, icon, sc, extra = '', opts = {}) {
@@ -283,7 +282,22 @@ function scoreCard(key, icon, sc, extra = '', opts = {}) {
   const fac = facs ? `<details${opts.open ? ' open' : ''}><summary>${esc(L.factors)}</summary><ul class="factors">${facs}</ul></details>` : '';
   return `<div class="card hz-card lv${lv}">${head}${opts.scope ? `<p class="small muted" style="margin:.3rem 0 0">${esc(opts.scope)}</p>` : ''}${bar}${fac}${extra}</div>`;
 }
-function tipList(arr) { return `<h3>${esc(t().tips)}</h3><ul class="tips small">${arr.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>`; }
+function tipList(arr) { return `<details class="fold"><summary>${esc(t().tips)} · ${arr.length}</summary><ul class="tips small">${arr.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></details>`; }
+// Uzun açıklamalar varsayılan olarak kapalı küçük bir "ⓘ" satırına toplanır.
+function info(text) { return text ? `<details class="info"><summary>ⓘ ${esc(t().moreInfo)}</summary><p>${esc(text)}</p></details>` : ''; }
+// Raporun başındaki sayısal özet kutucukları
+function statTiles(d) {
+  const L = t(), q = d.quakes, f = d.fault, ter = d.terrain, cl = d.climate, w = d.water;
+  const tiles = [];
+  if (f && f.distKm != null) tiles.push([fmt.km(f.distKm, lang), L.st.fault, f.slipRate != null ? `${fmt.n1(f.slipRate, lang)} mm/${L.st.yr}` : '']);
+  if (q && q.felt) tiles.push([`M${fmt.n1(q.felt.mag, lang)}`, L.st.quake, fmt.km(q.felt.d, lang)]);
+  if (q) tiles.push([fmt.pct(q.p6_50y, lang), L.st.prob, '']);
+  if (w) tiles.push([w.riverDistM != null ? fmt.m(w.riverDistM, lang) : '>1,5 km', L.st.water, w.riverName || '']);
+  if (ter) tiles.push([`${fmt.n1(ter.siteSlope, lang)}°`, L.st.slope, `${fmt.n0(ter.elevation, lang)} m`]);
+  if (cl) tiles.push([`${fmt.n0(cl.maxDailyPrecip, lang)} mm`, L.st.rain, `${fmt.n0(cl.annualPrecip, lang)} mm/${L.st.yr}`]);
+  if (cl && ter && ter.elevation > 400) tiles.push([`${fmt.n0(cl.annualSnowCm, lang)} cm`, L.st.snow, '']);
+  return `<div class="stats">${tiles.map(([v, k, sub]) => `<div class="stat"><b>${esc(v)}</b><span>${esc(k)}</span>${sub ? `<small>${esc(sub)}</small>` : ''}</div>`).join('')}</div>`;
+}
 function crimeCard(d) {
   const L = t(), x = d.country?.text, g = d.guide;
   if (g.cr?.local) {
@@ -292,12 +306,12 @@ function crimeCard(d) {
     const cc = g.crCountry;
     const ctry = cc ? `<h3>${esc(L.countryInfo)}</h3><ul class="factors">${cc.factors.map((f) => `<li><span>${esc(L.f[f.k](f.v, lang))}</span></li>`).join('')}</ul>` : '';
     const extra = `${cats ? `<h3>${esc(L.localTitle)}</h3><ul class="factors">${cats}</ul>` : ''}
-      <p class="note">${esc(L.localNote)}</p>
+      ${info(L.localNote)}
       <p class="small"><a href="${esc(loc.url)}" target="_blank" rel="noopener">${esc(L.localSource)}</a></p>
       ${ctry}${x?.crime?.blocks?.length ? officialHtml(d, [x.crime]) : ''}${tipList(L.tip.cr)}`;
     return scoreCard('cr', 'cr', g.cr, extra, { scope: L.crimeScopeLocal(loc.source), noScoreText: L.crimeFail, open: true });
   }
-  return scoreCard('cr', 'cr', g.cr, `${officialHtml(d, [x?.crime])}<p class="note">${esc(L.crimeNoLocal)}</p>${tipList(L.tip.cr)}`,
+  return scoreCard('cr', 'cr', g.cr, `${officialHtml(d, [x?.crime])}${info(L.crimeNoLocal)}${tipList(L.tip.cr)}`,
     { scope: L.crimeScope, noScoreText: L.crimeFail, open: true });
 }
 function titleCase(s) { return String(s).toLowerCase().replace(/(^|[\s/-])\p{L}/gu, (m) => m.toUpperCase()); }
@@ -316,8 +330,8 @@ function adviceCard(d) {
   return `<div class="card hz-card lv${lv}">${head}<p class="small muted" style="margin:.3rem 0 0">${esc(L.advScope)}</p>${bar}
     <ul class="adv-list">${rows}</ul>
     ${missing.length ? `<p class="small muted">${esc(L.advMissing(missing.join(', ')))}</p>` : ''}
-    ${a.regional ? `<p class="note">${esc(L.advRegionalNote)}</p>` : ''}
-    <p class="small muted">${esc(L.advNote)}</p></div>`;
+    ${a.regional ? info(L.advRegionalNote) : ''}
+    ${info(L.advNote)}</div>`;
 }
 function newsCard(d) {
   const L = t(), n = d.news;
@@ -335,7 +349,7 @@ function newsCard(d) {
     <div class="segs">${btn('all', `${L.newsAll} · ${n.items.length}`)}${btn('dis', `${L.newsCat.dis} · ${n.counts.dis}`)}${btn('cri', `${L.newsCat.cri} · ${n.counts.cri}`)}</div>
     ${list}
     ${items.length > 8 ? `<button class="link-btn" id="btnNewsMore">${esc(state.newsMore ? L.newsLess : L.newsMoreBtn(items.length - 8))}</button>` : ''}
-    <p class="note">${esc(L.newsNote)}</p></div>`;
+    ${info(L.newsNote)}</div>`;
 }
 function trLevel(score) { const k = transportLevel(score); return { lv: [1, 3, 5][k], label: t().trLv[k] }; }
 function guideHtml(d) {
@@ -346,8 +360,8 @@ function guideHtml(d) {
   const names = la.langs.map((l) => langName(l.code, lang, l.name)).join(', ');
   const laCard = `<div class="card hz-card lv0"><div class="hz-top"><i class="hz-ic la"></i><h3>${esc(L.cat.la.t)}</h3></div>
     <ul class="factors">${names ? `<li><span>${esc(L.langOfficial(names))}</span></li>` : ''}<li><span>${esc(L.langEng(la.englishOfficial))}</span></li></ul>
-    <p class="note">${esc(L.langNote)}</p>${tipList(L.tip.la)}</div>`;
-  return `<p class="small muted" style="margin:0 2px 10px">${esc(L.guideIntro)}</p><div class="hz-grid">${adviceCard(d)}${cr}${newsCard(d)}${tr}${laCard}</div>`;
+    ${info(L.langNote)}${tipList(L.tip.la)}</div>`;
+  return `<div style="margin:0 2px 8px">${info(L.guideIntro)}</div><div class="hz-grid">${adviceCard(d)}${cr}${newsCard(d)}${tr}${laCard}</div>`;
 }
 
 // ---------- Kayıtlı değerlendirmeler ----------
@@ -446,6 +460,7 @@ function renderCompare() {
 }
 
 // ---------- Rapor ----------
+function headline(d) { return summaryText(d)[0] || ''; }
 function summaryText(d) {
   const L = t(), s = L.sum, out = [];
   const ranked = HZ.filter((h) => d.scores[h]).sort((a, b) => d.scores[b].score - d.scores[a].score);
@@ -499,17 +514,17 @@ function renderReport(d) {
           <small>${esc(L.ago)}: ${fmt.km(e.distKm, lang)} · ${esc(L.depth)}: ${e.depth != null ? fmt.n0(e.depth, lang) + ' km' : '—'}</small></div></li>`).join('')}</ul>`
         : `<p class="muted">${esc(L.quakesNone)}</p>`}
       <h3>${esc(L.expected)}</h3>
-      <p class="note">${esc(L.expectedNote)}</p>
       <div class="probs">
         ${[['p6_10', q.p6_10y], ['p6_50', q.p6_50y], ['p7_50', q.p7_50y]].map(([k, p]) => `
           <div><div class="prob"><span>${esc(L[k])}</span><b>${fmt.pct(p, lang)}</b></div><div class="pbar"><i style="width:${Math.round(p * 100)}%"></i></div></div>`).join('')}
       </div>
+      ${info(L.expectedNote)}
     </div>`;
 
   const saved = d.saved ? `<div class="saved-bar"><span>${esc(L.savedOn(L.when(d.date, lang)))}</span><button id="btnRefresh" class="link-btn">${esc(L.refresh)}</button></div>` : '';
   const tabs = `<div class="tabs" role="tablist"><button data-tab="risk" class="${state.tab === 'risk' ? 'on' : ''}">${esc(L.tabRisk)}</button><button data-tab="guide" class="${state.tab === 'guide' ? 'on' : ''}">${esc(L.tabGuide)}</button></div>`;
   const riskTab = `
-    <div class="card"><h3 style="margin-top:0">${esc(L.summary)}</h3>${summaryText(d).map((p) => `<p>${esc(p)}</p>`).join('')}</div>
+    <div class="card"><h3 style="margin-top:0">${esc(L.keyNumbers)}</h3>${statTiles(d)}<p class="small muted" style="margin:.6rem 0 0">${esc(headline(d))}</p></div>
     <div class="hz-grid">${HZ.map((h) => hazardCard(h, d.scores[h])).join('')}</div>
     <div class="card" style="margin-top:14px">
       <h3 style="margin-top:0">${esc(L.map)}</h3>
@@ -518,7 +533,7 @@ function renderReport(d) {
       <div class="actions" style="margin-top:.7rem"><button id="btnOpenMap" class="btn ghost">${esc(L.openMap)}</button></div>
     </div>
     ${quakeHtml}
-    <div class="card"><h3 style="margin-top:0">${esc(L.tips)}</h3><ul class="tips">${tipsFor(d).map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>`;
+    <div class="card">${tipList(tipsFor(d))}</div>`;
   $('#vReport').innerHTML = saved + `
     <div class="card">
       <div class="r-head">
@@ -531,14 +546,14 @@ function renderReport(d) {
           ${d.terrain ? `<span>${esc(L.elevation)}: ${fmt.n0(d.terrain.elevation, lang)} m</span>` : ''}</div>
         </div>
       </div>
-      <p class="small muted" style="margin-top:.7rem">${esc(L.safetyNote)}</p>
+      ${info(L.safetyNote + ' ' + L.methodText)}
     </div>
     ${tabs}
     ${state.tab === 'risk' ? riskTab : guideHtml(d)}
     <div class="actions" style="margin-top:14px"><button id="btnShare" class="btn primary">${esc(L.share)}</button><button id="btnNew" class="btn ghost">${esc(L.newSearch)}</button></div>
-    <div class="card" style="margin-top:14px"><h3 style="margin-top:0">${esc(L.sources)}</h3>
+    <details class="fold card" style="margin-top:14px"><summary>${esc(L.sources)}</summary>
       <ul class="small" style="padding-left:1.1rem">${L.srcList.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>
-      <p class="small muted">${esc(L.disclaimer)}</p></div>`;
+      <p class="small muted">${esc(L.disclaimer)}</p></details>`;
 
   if (state.tab === 'risk') {
     drawMap($('#map'), d.place.lat, d.place.lon, d.fault?.nearby || [], fitZoom(d.place.lat, d.fault?.nearby?.length ? d.fault.distKm : null));

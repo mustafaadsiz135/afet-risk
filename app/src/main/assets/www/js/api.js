@@ -134,8 +134,9 @@ export async function earthquakes(lat, lon, radiusKm = 150) {
 export async function waterways(lat, lon) {
   const q = `[out:json][timeout:25];(` +
     `way(around:1500,${lat},${lon})[waterway~"^(river|canal)$"];` +
-    `way(around:400,${lat},${lon})[waterway=stream];` +
+    `way(around:150,${lat},${lon})[waterway=stream];` +
     `way(around:1500,${lat},${lon})[natural=water];` +
+    `rel(around:1500,${lat},${lon})[natural=water][water~"^(lake|reservoir|river|lagoon)$"];` +
     `way(around:1500,${lat},${lon})[natural=coastline];` +
     `);out body geom;`;
   const body = 'data=' + encodeURIComponent(q);
